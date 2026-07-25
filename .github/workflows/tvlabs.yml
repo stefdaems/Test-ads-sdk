@@ -1,0 +1,100 @@
+name: TV Labs — Real Device Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Target platform (roku | webos | firetv | all)'
+        required: false
+        default: all
+
+permissions:
+  contents: read
+
+jobs:
+  roku:
+    name: Roku
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name != 'workflow_dispatch' ||
+      inputs.platform == 'roku' ||
+      inputs.platform == 'all'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Roku tests
+        env:
+          TVLABS_API_KEY: ${{ secrets.TVLABS_API_KEY }}
+          TVLABS_PLATFORM: roku
+          # Optional: set to your Roku channel ID to run full channel tests
+          TVLABS_ROKU_CHANNEL_ID: ${{ vars.TVLABS_ROKU_CHANNEL_ID }}
+          # Optional: path to a sideloadable .zip build
+          TVLABS_BUILD_PATH: ${{ vars.TVLABS_BUILD_PATH }}
+        run: npm run test:roku
+
+  webos:
+    name: webOS (LG)
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name != 'workflow_dispatch' ||
+      inputs.platform == 'webos' ||
+      inputs.platform == 'all'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run webOS tests
+        env:
+          TVLABS_API_KEY: ${{ secrets.TVLABS_API_KEY }}
+          TVLABS_PLATFORM: webos
+          # Optional: set to your webOS app ID to run full app tests
+          TVLABS_WEBOS_APP_ID: ${{ vars.TVLABS_WEBOS_APP_ID }}
+        run: npm run test:webos
+
+  firetv:
+    name: Fire TV
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name != 'workflow_dispatch' ||
+      inputs.platform == 'firetv' ||
+      inputs.platform == 'all'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Fire TV tests
+        env:
+          TVLABS_API_KEY: ${{ secrets.TVLABS_API_KEY }}
+          TVLABS_PLATFORM: firetv
+          # Optional: set to your app's Android package name to run full app tests
+          TVLABS_FIRETV_PACKAGE: ${{ vars.TVLABS_FIRETV_PACKAGE }}
+        run: npm run test:firetv

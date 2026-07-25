@@ -1,0 +1,36 @@
+{
+  "name": "test-ads-sdk",
+  "version": "1.0.0",
+  "description": "Ads SDK integration tests on real TV devices via TV Labs",
+  "scripts": {
+    "test": "wdio run wdio.conf.ts",
+    "test:roku": "TVLABS_PLATFORM=roku wdio run wdio.conf.ts --spec test/specs/roku.spec.ts",
+    "test:webos": "TVLABS_PLATFORM=webos wdio run wdio.conf.ts --spec test/specs/webos.spec.ts",
+    "test:firetv": "TVLABS_PLATFORM=firetv wdio run wdio.conf.ts --spec test/specs/firetv.spec.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stefdaems/Test-ads-sdk.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/stefdaems/Test-ads-sdk/issues"
+  },
+  "homepage": "https://github.com/stefdaems/Test-ads-sdk#readme",
+  "devDependencies": {
+    "@tvlabs/wdio-service": "^0.1.13",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^26.1.1",
+    "@wdio/cli": "^9.30.0",
+    "@wdio/globals": "^9.29.1",
+    "@wdio/local-runner": "^9.30.0",
+    "@wdio/mocha-framework": "^9.30.0",
+    "@wdio/spec-reporter": "^9.29.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^7.0.2",
+    "webdriverio": "^9.30.0"
+  }
+}
