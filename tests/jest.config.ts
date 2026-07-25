@@ -4,18 +4,26 @@ import type { Config } from 'jest';
  * Jest configuration for the Ads SDK device lab test suite.
  *
  * Tests are written in TypeScript and executed via ts-jest.
- * All specs target a real Appium server connected to physical devices.
  *
- * Required environment variables (passed at runtime):
- *   PLATFORM        - ios | android | tvos | web   (default: android)
- *   DEVICE_UDID     - iOS / tvOS device UDID
- *   DEVICE_SERIAL   - Android device serial (from `adb devices`)
- *   APP_PATH        - Absolute path to the .ipa / .apk under test
- *   APPIUM_HOST     - Appium server host   (default: 127.0.0.1)
- *   APPIUM_PORT     - Appium server port   (default: 4723)
+ * Two categories of tests are supported:
  *
- * Example:
- *   PLATFORM=ios DEVICE_UDID=<udid> APP_PATH=/path/to/app.ipa npm test
+ *   1. Native (Appium)  — consent/, network/, viewability/, memory/,
+ *                         players/ *-android.spec.ts, *-ios.spec.ts
+ *      Requires: Appium server + real device connected.
+ *      Env vars: PLATFORM, DEVICE_UDID | DEVICE_SERIAL, APP_PATH,
+ *                APPIUM_HOST, APPIUM_PORT
+ *
+ *   2. Web (Playwright) — players/ *-web.spec.ts
+ *      Requires: Playwright Chromium installed (`npm run playwright:install`),
+ *                local player host servers running, proxy active.
+ *      Env vars: HEADLESS, PLAYER_HOST, PROXY_HOST, PROXY_PORT
+ *
+ * Run subsets with:
+ *   npm run test:players          — all player specs
+ *   npm run test:web-players      — web-only player specs (Playwright)
+ *   npm run test:native           — native-only player specs (Appium)
+ *   npm run test:theoplayer       — THEOplayer specs only
+ *   npm run test:exoplayer        — ExoPlayer specs only
  */
 const config: Config = {
   preset: 'ts-jest',
@@ -29,16 +37,16 @@ const config: Config = {
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: './tsconfig.json' }],
   },
 
-  // Appium sessions are slow — allow plenty of time per test and per suite.
+  // Appium / Playwright sessions are slow.
   testTimeout: 180_000,
 
-  // Run one suite at a time so a single Appium session can be shared.
+  // Run one suite at a time (one Appium/Playwright session per suite).
   maxWorkers: 1,
 
-  // Print a full test-name line for every result.
+  // Verbose output.
   verbose: true,
 
-  // Global teardown closes any leaked Appium sessions.
+  // Global teardown.
   globalTeardown: './helpers/globalTeardown.ts',
 };
 

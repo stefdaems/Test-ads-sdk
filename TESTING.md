@@ -161,3 +161,139 @@ Before shipping any release binary to customers, verify each item below:
 - [ ] CTV/tvOS focus-trap tests pass (user can always navigate out of an ad).
 - [ ] Core Web Vitals impact measured on a production-like Web host page.
 - [ ] All consent / ATT paths tested on a real device (not just simulator).
+
+---
+
+## 5. Multi-Player Integration — Feature Scope
+
+The Ads SDK must integrate seamlessly with every major video player in the
+ecosystem.  The table below shows the **full feature scope** validated per
+player and per platform.
+
+### Player matrix
+
+| Player | Web | Android | iOS / tvOS |
+|---|---|---|---|
+| **THEOplayer** | ✅ | ✅ | ✅ |
+| **Shaka Player** | ✅ | ✅ (via ExoPlayer ext.) | — |
+| **Video.js** | ✅ | — | — |
+| **ExoPlayer** | — | ✅ | — |
+| **Bitmovin** | ✅ | ✅ | ✅ |
+
+### Feature scope (every cell in the matrix must pass)
+
+| Feature | THEOplayer | Shaka | Video.js | ExoPlayer | Bitmovin |
+|---|---|---|---|---|---|
+| SDK init with valid PID | All | All | Web | Android | All |
+| Player adapter attaches | All | All | Web | Android | All |
+| SDK rejects null PID | All | All | Web | Android | All |
+| Double-init warning, no crash | All | All | Web | Android | All |
+| **Pre-roll** before content | All | All | Web | Android | All |
+| **Mid-roll** at time offset | All | All | Web | Android | All |
+| **Post-roll** after content | All | All | Web | Android | All |
+| **VMAP** multi-break scheduling | All | All | Web | Android | All |
+| **Ad pod** sequential playback | All | All | Web | Android | All |
+| Skip button at declared offset | All | All | Web | Android | All |
+| Skip pixel on skip | All | All | Web | Android | All |
+| Non-skippable — no skip button | All | All | Web | Android | All |
+| VAST linear plays to completion | All | All | Web | Android | All |
+| VAST non-linear overlay | All | All | Web | — | All |
+| VAST companion renders | Web | Web | Web | — | Web |
+| VAST wrapper chain resolves | All | All | Web | Android | All |
+| Empty VAST — graceful fallback | All | All | Web | Android | All |
+| 404 VAST URL — graceful fallback | All | All | Web | Android | All |
+| Impression pixel fires once | All | All | Web | Android | All |
+| Click pixel fires once | All | All | Web | Android | All |
+| Quartile pixels (start→complete) | All | All | Web | Android | All |
+| No duplicates after network drop | All | All | Web | Android | All |
+| All SDK requests use HTTPS | All | All | Web | Android | All |
+| x-consent-string on every request | All | All | Web | Android | All |
+| Content pauses for pre-roll | All | All | Web | Android | All |
+| Content resumes after ad | All | All | Web | Android | All |
+| Seeking disabled during ad | All | All | Web | Android | All |
+| Player controls hidden during ad | All | All | Web | Android | All |
+| Full lifecycle event sequence | All | All | Web | Android | All |
+| GDPR/TCF consent passed | All | All | Web | Android | All |
+| No tracking on GDPR denied | All | All | Web | Android | All |
+| CCPA opt-out suppresses tracking | All | All | Web | Android | All |
+| ATT prompt before first ad (iOS) | THEOplayer | — | — | — | Bitmovin |
+| Ad container visible in viewport | All | All | Web | Android | All |
+| No overlay blocking click target | All | All | Web | Android | All |
+| Ad pauses on background/hidden | All | All | Web | Android | All |
+| Ad view removed after complete | All | All | Web | Android | All |
+| Memory stable across 10 cycles | All | All | Web | Android | All |
+| Background threads released | — | — | — | Android | All native |
+
+### Test file locations
+
+```
+tests/
+├── players/
+│   ├── theoplayer/
+│   │   ├── theoplayer-web.spec.ts      # Playwright / Chromium
+│   │   ├── theoplayer-android.spec.ts  # Appium / Android
+│   │   └── theoplayer-ios.spec.ts      # Appium / iOS + tvOS
+│   ├── shaka/
+│   │   ├── shaka-web.spec.ts           # Playwright / Chromium
+│   │   └── shaka-android.spec.ts       # Appium / Android
+│   ├── videojs/
+│   │   └── videojs-web.spec.ts         # Playwright / Chromium
+│   ├── exoplayer/
+│   │   └── exoplayer-android.spec.ts   # Appium / Android
+│   └── bitmovin/
+│       ├── bitmovin-web.spec.ts         # Playwright / Chromium
+│       ├── bitmovin-android.spec.ts     # Appium / Android
+│       └── bitmovin-ios.spec.ts         # Appium / iOS
+└── helpers/
+    ├── adFeatures.ts    # Feature matrix, VAST fixtures, ad event constants
+    ├── har.ts           # HAR reading & assertion utilities
+    ├── webPlayer.ts     # Playwright browser helper for web player tests
+    └── driver.ts        # WebdriverIO / Appium session factory
+```
+
+### Host app pages
+
+```
+host-apps/web/players/
+├── theoplayer/
+│   ├── index.html        # Good integration
+│   ├── good/index.html   # Same (copy)
+│   └── bad/index.html    # Null publisher ID
+├── shaka/
+│   ├── index.html / good/ / bad/
+├── videojs/
+│   ├── index.html / good/ / bad/
+└── bitmovin/
+    ├── index.html / good/ / bad/
+```
+
+### Running player tests
+
+```bash
+cd tests
+npm install
+npm run playwright:install   # install Playwright Chromium once
+
+# --- Web player tests (all four players in Chromium) ---
+# Start each player's host server first:
+cd ../host-apps/web/players/theoplayer && npx serve . --listen 3000 &
+cd ../shaka  && npx serve . --listen 3001 &
+cd ../videojs  && npx serve . --listen 3002 &
+cd ../bitmovin && npx serve . --listen 3003 &
+
+cd ../../../../tests
+PLAYER_HOST=http://localhost:3000 npm run test:theoplayer   # THEOplayer web
+PLAYER_HOST=http://localhost:3001 npm run test:shaka        # Shaka web
+PLAYER_HOST=http://localhost:3002 npm run test:videojs      # Video.js web
+PLAYER_HOST=http://localhost:3003 npm run test:bitmovin     # Bitmovin web
+
+# --- All web player tests ---
+npm run test:web-players
+
+# --- Native player tests (Android) ---
+PLATFORM=android DEVICE_SERIAL=<serial> APP_PATH=/path/ExoPlayer.apk npm run test:exoplayer
+
+# --- THEOplayer on all platforms ---
+PLATFORM=ios     DEVICE_UDID=<udid>   APP_PATH=/path/theo.ipa npm run test:theoplayer
+PLATFORM=android DEVICE_SERIAL=<ser>  APP_PATH=/path/theo.apk npm run test:theoplayer
+```
