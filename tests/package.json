@@ -1,21 +1,20 @@
 {
   "name": "ad-sdk-device-tests",
   "version": "1.0.0",
-  "description": "Appium-based cross-platform tests for the ad SDK device lab",
+  "description": "TypeScript/Jest + Appium cross-platform tests for the ad SDK device lab",
   "scripts": {
-    "test": "wdio run wdio.conf.js",
-    "test:consent": "wdio run wdio.conf.js --spec consent/",
-    "test:network": "wdio run wdio.conf.js --spec network/",
-    "test:viewability": "wdio run wdio.conf.js --spec viewability/",
-    "test:memory": "wdio run wdio.conf.js --spec memory/"
+    "test": "jest",
+    "test:consent": "jest --testPathPattern=consent/",
+    "test:network": "jest --testPathPattern=network/",
+    "test:viewability": "jest --testPathPattern=viewability/",
+    "test:memory": "jest --testPathPattern=memory/"
   },
   "devDependencies": {
-    "@wdio/cli": "^8.0.0",
-    "@wdio/local-runner": "^8.0.0",
-    "@wdio/mocha-framework": "^8.0.0",
-    "@wdio/spec-reporter": "^8.0.0",
-    "appium": "^2.0.0",
-    "appium-uiautomator2-driver": "^2.0.0",
-    "appium-xcuitest-driver": "^5.0.0"
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0",
+    "jest": "^29.5.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.4.0",
+    "webdriverio": "^8.0.0"
   }
 }

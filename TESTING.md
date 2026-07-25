@@ -91,28 +91,61 @@ Per-platform detailed guides:
 
 Manual testing on real devices will eventually become a bottleneck. To scale, connect your physical devices to an automation framework.
 
-**Recommended tool: [Appium](https://appium.io/)**
+**Test stack: [Appium](https://appium.io/) + [WebdriverIO](https://webdriver.io/) + [Jest](https://jestjs.io/) + TypeScript**
 
-- Write unified **cross-platform test scripts** that dynamically allocate available devices from your lab.
-- Automate gestures, simulate network drops on physical devices, and test video buffering recovery — without manual intervention.
+- All test specs are written in **TypeScript** and executed by **Jest** (`ts-jest`).
+- WebdriverIO is used as the Appium client library.
+- Run suites from the repository root or from the `tests/` directory.
 
-See [`tests/`](./tests/) for the full set of Appium test suites.
+See [`tests/`](./tests/) for the full set of test suites.
+
+### Installing host apps from a centralised location
+
+A root-level installer lets you build and deploy every host app from a single command, without having to navigate into each platform directory:
+
+```bash
+# From the repository root — install Node.js dependencies first:
+npm install
+
+# Deploy all host apps (good + bad) to connected devices:
+npm run install:all
+
+# Deploy only the iOS good app:
+npm run install:ios -- --variant good
+
+# Deploy only the Android bad app:
+npm run install:android -- --variant bad
+
+# Deploy a specific platform using the installer script directly:
+ts-node scripts/install-apps.ts --platform tvos --variant all
+```
+
+Key environment variables for the installer:
+
+| Variable | Purpose |
+|---|---|
+| `DEVICE_UDID` | iOS / tvOS physical device UDID (from `xcrun xctrace list devices`) |
+| `DEVICE_SERIAL` | Android device serial (from `adb devices`) |
+| `ANDROID_VARIANT` | `debug` (default) or `release` |
+| `IOS_TEAM_ID` | Apple development team ID for code signing |
 
 ### Running the tests
 
 ```bash
-# Install Node.js dependencies (Appium client + WebdriverIO)
-cd tests
-npm install
+# Install test dependencies
+cd tests && npm install
 
-# Run all tests against a locally connected device (iOS example)
-PLATFORM=ios DEVICE_UDID=<your-device-udid> npm test
+# Run all tests against a locally connected Android device
+PLATFORM=android DEVICE_SERIAL=<serial> APP_PATH=/path/to/app.apk npm test
 
-# Run all tests for Android
-PLATFORM=android DEVICE_SERIAL=<your-device-serial> npm test
+# Run all tests for iOS
+PLATFORM=ios DEVICE_UDID=<udid> APP_PATH=/path/to/app.ipa npm test
 
 # Run only consent tests
-npm test -- --spec consent/
+npm run test:consent
+
+# Run only memory teardown tests
+npm run test:memory
 ```
 
 ---

@@ -31,8 +31,8 @@ Test-ads-sdk/
 
 1. **Clone** this repository.
 2. **Read** [TESTING.md](./TESTING.md) to understand the end-to-end testing strategy.
-3. **Pick** a platform under `host-apps/` and follow its `README.md`.
-4. **Run** the automated tests from `tests/` using [Appium](https://appium.io/) connected to your real-device lab.
+3. **Install** host apps from the repository root with `npm run install:all` (or per-platform — see [TESTING.md § 4](./TESTING.md)).
+4. **Run** the automated TypeScript/Jest tests from `tests/` using [Appium](https://appium.io/) connected to your real-device lab.
 
 ## Key documentation
 
