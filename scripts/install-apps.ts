@@ -13,6 +13,8 @@
  *   ts-node scripts/install-apps.ts --platform ios --remote browserstack
  *   ts-node scripts/install-apps.ts --platform android --remote aws
  *   ts-node scripts/install-apps.ts --platform android --remote firebase
+ *   ts-node scripts/install-apps.ts --platform android --remote tvlabs
+ *   ts-node scripts/install-apps.ts --platform ios --remote tvlabs
  *   ts-node scripts/install-apps.ts --platform ios --agent-host user@lab.example.com
  *
  * Environment variables:
@@ -32,13 +34,17 @@
  *   -- Firebase Test Lab (--remote firebase) --
  *   FIREBASE_PROJECT         - GCP project ID used with gcloud
  *
+ *   -- TV Labs (--remote tvlabs) --
+ *   TVLABS_API_KEY           - TV Labs API key (https://tvlabs.ai/app/keys)
+ *   TVLABS_APP_SLUG          - (optional) TV Labs application slug for build association
+ *
  * Players:
  *   Web     : theoplayer | shaka | videojs | bitmovin | all (default)
  *   Android : exoplayer  | shaka | theoplayer | bitmovin | all (default)
  *   iOS     : theoplayer | bitmovin | all (default)
  */
 
-import { execSync, ExecSyncOptions } from 'child_process';
+import { execSync, execFileSync, ExecSyncOptions } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -51,7 +57,7 @@ type Variant = 'good' | 'bad' | 'all';
 type WebPlayer    = 'theoplayer' | 'shaka' | 'videojs' | 'bitmovin' | 'all';
 type AndroidPlayer = 'exoplayer' | 'shaka' | 'theoplayer' | 'bitmovin' | 'all';
 type IosPlayer    = 'theoplayer' | 'bitmovin' | 'all';
-type RemoteTarget = 'browserstack' | 'aws' | 'firebase';
+type RemoteTarget = 'browserstack' | 'aws' | 'firebase' | 'tvlabs';
 
 interface InstallOptions {
   platform: Platform;
@@ -77,8 +83,7 @@ function run(cmd: string, cwd: string): void {
 /** Execute a command on a remote agent machine via SSH. */
 function runRemoteSsh(agentHost: string, cmd: string): void {
   console.log(`\n▶ [SSH → ${agentHost}] ${cmd}`);
-  const opts: ExecSyncOptions = { stdio: 'inherit' };
-  execSync(`ssh -o StrictHostKeyChecking=no ${agentHost} '${cmd.replace(/'/g, "'\\''")}'`, opts);
+  execFileSync('ssh', ['-o', 'StrictHostKeyChecking=no', agentHost, cmd], { stdio: 'inherit' });
 }
 
 function parseArgs(): InstallOptions {
@@ -97,7 +102,7 @@ function parseArgs(): InstallOptions {
 
   const validPlatforms: Platform[] = ['ios', 'android', 'tvos', 'web', 'all'];
   const validVariants: Variant[] = ['good', 'bad', 'all'];
-  const validRemotes: RemoteTarget[] = ['browserstack', 'aws', 'firebase'];
+  const validRemotes: RemoteTarget[] = ['browserstack', 'aws', 'firebase', 'tvlabs'];
 
   if (!validPlatforms.includes(platform)) {
     console.error(`❌ Invalid platform "${platform}". Choose from: ${validPlatforms.join(', ')}`);
@@ -117,6 +122,10 @@ function parseArgs(): InstallOptions {
   }
   if (remote === 'firebase' && platform !== 'android') {
     console.error('❌ Firebase Test Lab only supports the android platform.');
+    process.exit(1);
+  }
+  if (remote === 'tvlabs' && platform === 'web') {
+    console.error('❌ TV Labs does not support the web platform.');
     process.exit(1);
   }
   if (remote && agentHost) {
@@ -143,11 +152,13 @@ function uploadToBrowserStack(artifactPath: string): string {
     throw new Error('BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY must be set.');
   }
   console.log(`\n☁ Uploading ${artifactPath} to BrowserStack…`);
-  const result = execSync(
-    `curl -s -u "${username}:${accessKey}" ` +
-    `-X POST "https://api-cloud.browserstack.com/app-automate/upload" ` +
-    `-F "file=@${artifactPath}"`,
-  ).toString();
+  const result = execFileSync('curl', [
+    '-s',
+    '-u', `${username}:${accessKey}`,
+    '-X', 'POST',
+    'https://api-cloud.browserstack.com/app-automate/upload',
+    '-F', `file=@${artifactPath}`,
+  ]).toString();
   const parsed = JSON.parse(result) as { app_url?: string; error?: string };
   if (!parsed.app_url) {
     throw new Error(`BrowserStack upload failed: ${result}`);
@@ -203,6 +214,30 @@ function uploadToFirebase(apkPath: string): void {
   console.log('✅ Firebase Test Lab run scheduled.');
 }
 
+/**
+ * Upload an IPA or APK to TV Labs via the Phoenix WebSocket build channel.
+ * Returns the build_id string which should be passed to the test runner as
+ * the TVLABS_BUILD_ID environment variable.
+ */
+function uploadToTvLabs(artifactPath: string): string {
+  if (!process.env.TVLABS_API_KEY) {
+    throw new Error(
+      'TVLABS_API_KEY must be set. Get your key at https://tvlabs.ai/app/keys',
+    );
+  }
+  const helperScript = path.join(__dirname, 'tvlabs-upload.ts');
+  const appSlug = process.env.TVLABS_APP_SLUG ?? '';
+  const slugArg = appSlug ? ` --slug "${appSlug}"` : '';
+  console.log(`\n☁ Uploading ${path.basename(artifactPath)} to TV Labs…`);
+  const buildId = execSync(
+    `ts-node "${helperScript}" --artifact "${artifactPath}"${slugArg}`,
+    { stdio: ['inherit', 'pipe', 'inherit'] },
+  ).toString().trim();
+  console.log(`✅ TV Labs build_id: ${buildId}`);
+  console.log(`   Set TVLABS_BUILD_ID=${buildId} when running tests against appium.tvlabs.ai`);
+  return buildId;
+}
+
 // ---------------------------------------------------------------------------
 // Platform installers
 // ---------------------------------------------------------------------------
@@ -252,6 +287,8 @@ function installIos(variant: Variant, player: string, remote?: RemoteTarget, age
           uploadToBrowserStack(ipaPath);
         } else if (remote === 'aws') {
           uploadToAws(ipaPath, 'ios');
+        } else if (remote === 'tvlabs') {
+          uploadToTvLabs(ipaPath);
         }
       } else if (agentHost) {
         runRemoteSsh(agentHost, `ideviceinstaller -u ${udid} -i "$(ls ${ipaDir}/*.ipa | head -1)"`);
@@ -316,6 +353,8 @@ function installIos(variant: Variant, player: string, remote?: RemoteTarget, age
           uploadToBrowserStack(ipaPath);
         } else if (remote === 'aws') {
           uploadToAws(ipaPath, 'ios');
+        } else if (remote === 'tvlabs') {
+          uploadToTvLabs(ipaPath);
         }
       } else if (agentHost) {
         runRemoteSsh(agentHost, `ideviceinstaller -u ${udid} -i "$(ls ${ipaDir}/*.ipa | head -1)"`);
@@ -373,6 +412,8 @@ function installAndroid(variant: Variant, player: string, remote?: RemoteTarget,
           uploadToAws(apkPath, 'android');
         } else if (remote === 'firebase') {
           uploadToFirebase(apkPath);
+        } else if (remote === 'tvlabs') {
+          uploadToTvLabs(apkPath);
         }
       } else if (agentHost) {
         run(`./gradlew ${assembleTask}`, dir);
@@ -407,6 +448,8 @@ function installAndroid(variant: Variant, player: string, remote?: RemoteTarget,
         uploadToAws(apkPath, 'android');
       } else if (remote === 'firebase') {
         uploadToFirebase(apkPath);
+      } else if (remote === 'tvlabs') {
+        uploadToTvLabs(apkPath);
       }
     } else if (agentHost) {
       run(`./gradlew ${assembleTask}`, dir);
@@ -420,9 +463,9 @@ function installAndroid(variant: Variant, player: string, remote?: RemoteTarget,
   }
 }
 
-function installTvos(variant: Variant, player: string): void {
+function installTvos(variant: Variant, player: string, remote?: RemoteTarget, agentHost?: string): void {
   const udid = process.env.DEVICE_UDID;
-  if (!udid) {
+  if (!udid && !remote && !agentHost) {
     console.warn('⚠ DEVICE_UDID not set — skipping install to Apple TV (build only).');
   }
   const teamId = process.env.IOS_TEAM_ID ?? '';
@@ -439,25 +482,56 @@ function installTvos(variant: Variant, player: string): void {
     }
 
     console.log(`\n📺 tvOS ${v} — building ${scheme}...`);
+    const archiveDir = path.join(dir, 'build', `${projectName}.xcarchive`);
+    const ipaDir = path.join(dir, 'build', 'ipa');
 
-    const buildCmd = [
-      'xcodebuild',
-      '-project', `${projectName}.xcodeproj`,
-      '-scheme', scheme,
-      '-configuration', 'Debug',
-      udid ? `-destination "id=${udid}"` : '-destination "generic/platform=tvOS"',
-      teamId ? `DEVELOPMENT_TEAM=${teamId}` : '',
-      'clean build',
-    ].filter(Boolean).join(' ');
-
-    run(buildCmd, dir);
-
-    if (udid) {
+    if (remote) {
+      const archiveCmd = [
+        'xcodebuild',
+        '-project', `${projectName}.xcodeproj`,
+        '-scheme', scheme,
+        '-configuration', 'Debug',
+        '-archivePath', archiveDir,
+        teamId ? `DEVELOPMENT_TEAM=${teamId}` : '',
+        'archive',
+      ].filter(Boolean).join(' ');
+      run(archiveCmd, dir);
       run(
-        `xcodebuild -project ${projectName}.xcodeproj -scheme ${scheme} -configuration Debug -destination "id=${udid}" install`,
+        `xcodebuild -exportArchive -archivePath "${archiveDir}" ` +
+        `-exportPath "${ipaDir}" -exportOptionsPlist ExportOptions.plist`,
         dir,
       );
-      console.log(`✅ tvOS ${v} installed to device ${udid}`);
+      const ipaPath = path.join(ipaDir, `${projectName}.ipa`);
+      if (remote === 'browserstack') {
+        uploadToBrowserStack(ipaPath);
+      } else if (remote === 'aws') {
+        uploadToAws(ipaPath, 'ios');
+      } else if (remote === 'tvlabs') {
+        uploadToTvLabs(ipaPath);
+      }
+    } else if (agentHost) {
+      runRemoteSsh(agentHost, `ideviceinstaller -u ${udid} -i "$(ls ${ipaDir}/*.ipa | head -1)"`);
+      console.log(`✅ tvOS ${v} installed on remote agent ${agentHost}`);
+    } else {
+      const buildCmd = [
+        'xcodebuild',
+        '-project', `${projectName}.xcodeproj`,
+        '-scheme', scheme,
+        '-configuration', 'Debug',
+        udid ? `-destination "id=${udid}"` : '-destination "generic/platform=tvOS"',
+        teamId ? `DEVELOPMENT_TEAM=${teamId}` : '',
+        'clean build',
+      ].filter(Boolean).join(' ');
+
+      run(buildCmd, dir);
+
+      if (udid) {
+        run(
+          `xcodebuild -project ${projectName}.xcodeproj -scheme ${scheme} -configuration Debug -destination "id=${udid}" install`,
+          dir,
+        );
+        console.log(`✅ tvOS ${v} installed to device ${udid}`);
+      }
     }
   }
 }
@@ -516,12 +590,15 @@ function installWeb(variant: Variant, player: string): void {
 // ---------------------------------------------------------------------------
 
 function main(): void {
-  const { platform, variant } = parseArgs();
+  const { platform, variant, player, remote, agentHost } = parseArgs();
 
   console.log(`\n🚀 Ads SDK Host App Installer`);
-  console.log(`   Platform : ${platform}`);
-  console.log(`   Variant  : ${variant}`);
-  console.log(`   SDK URL  : https://Ads-sdk.xnappet.live\n`);
+  console.log(`   Platform   : ${platform}`);
+  console.log(`   Variant    : ${variant}`);
+  console.log(`   Player     : ${player}`);
+  if (remote)    console.log(`   Remote     : ${remote}`);
+  if (agentHost) console.log(`   Agent host : ${agentHost}`);
+  console.log(`   SDK URL    : https://Ads-sdk.xnappet.live\n`);
 
   const platforms: Array<Exclude<Platform, 'all'>> =
     platform === 'all' ? ['ios', 'android', 'tvos', 'web'] : [platform];
@@ -529,16 +606,16 @@ function main(): void {
   for (const p of platforms) {
     switch (p) {
       case 'ios':
-        installIos(variant);
+        installIos(variant, player, remote, agentHost);
         break;
       case 'android':
-        installAndroid(variant);
+        installAndroid(variant, player, remote, agentHost);
         break;
       case 'tvos':
-        installTvos(variant);
+        installTvos(variant, player, remote, agentHost);
         break;
       case 'web':
-        installWeb(variant);
+        installWeb(variant, player);
         break;
     }
   }

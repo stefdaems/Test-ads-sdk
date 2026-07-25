@@ -19,7 +19,9 @@
     "test:memory": "cd tests && npm run test:memory"
   },
   "devDependencies": {
+    "@types/ws": "^8.5.0",
     "ts-node": "^10.9.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "ws": "^8.21.0"
   }
 }
