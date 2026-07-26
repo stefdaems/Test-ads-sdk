@@ -7,20 +7,29 @@
   <style>
     :root { color-scheme: dark; }
     body { margin: 0; font-family: system-ui, sans-serif; background: #0b0f14; color: #e6edf3; }
-    header { padding: 14px 18px; background: #11161d; border-bottom: 1px solid #222; }
+    header { padding: 14px 18px; background: #11161d; border-bottom: 1px solid #222; display: flex; align-items: center; gap: 18px; }
     header h1 { margin: 0; font-size: 18px; }
-    main { padding: 16px 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    nav { display: flex; gap: 4px; margin-left: auto; }
+    nav button { background: #1c232c; color: #8b98a5; border: 1px solid #30363d; padding: 5px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    nav button.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+    .page { display: none; padding: 16px 18px; }
+    .page.active { display: block; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
     section { background: #11161d; border: 1px solid #1c232c; border-radius: 8px; padding: 12px 14px; }
     section.wide { grid-column: 1 / -1; }
     h2 { font-size: 14px; margin: 0 0 10px; color: #8b98a5; text-transform: uppercase; letter-spacing: .05em; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #1c232c; vertical-align: top; }
     button { background: #1f6feb; color: #fff; border: 0; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
     button.secondary { background: #30363d; }
-    select { background: #0d1117; border: 1px solid #30363d; color: #e6edf3; padding: 5px 8px; border-radius: 6px; }
+    button.danger { background: #b91c1c; }
+    select, input[type=text] { background: #0d1117; border: 1px solid #30363d; color: #e6edf3; padding: 5px 8px; border-radius: 6px; }
+    input[type=text] { width: 100%; box-sizing: border-box; }
     .st.passed { color: #46d16f; } .st.failed { color: #ff6b6b; }
     .st.running, .st.dispatched { color: #d1a546; } .st.completed { color: #46d16f; }
     .st.idle { color: #8b98a5; } .st.offline { color: #ff6b6b; }
+    .st.pending { color: #8b98a5; }
     .muted { color: #8b98a5; font-size: 12px; }
     code { color: #9fb0c0; }
     pre { white-space: pre-wrap; font-size: 11px; color: #9fb0c0; max-height: 260px; overflow: auto; }
@@ -29,14 +38,47 @@
     #debug .k-sdk_event { color: #9fb0c0; }
     #debug .k-scenario_start { color: #1f6feb; }
     #debug .k-scenario_end { color: #46d16f; }
+
+    /* Cloud testing panel styles */
+    .provider-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+    .provider-tab { background: #1c232c; color: #8b98a5; border: 1px solid #30363d; padding: 5px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .provider-tab.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+    .provider-tab:disabled { opacity: .4; cursor: not-allowed; }
+    .cloud-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .device-list { max-height: 260px; overflow-y: auto; border: 1px solid #1c232c; border-radius: 6px; }
+    .device-item { padding: 7px 10px; border-bottom: 1px solid #1c232c; cursor: pointer; font-size: 13px; }
+    .device-item:last-child { border-bottom: 0; }
+    .device-item:hover { background: #1c232c; }
+    .device-item.selected { background: #162032; border-left: 3px solid #1f6feb; }
+    .device-item .device-name { font-weight: 600; }
+    .device-item .device-meta { color: #8b98a5; font-size: 11px; }
+    .cloud-log { font-family: ui-monospace, monospace; font-size: 11px; max-height: 240px; overflow-y: auto; background: #0d1117; border: 1px solid #1c232c; border-radius: 6px; padding: 8px; }
+    .cloud-log .log-line { padding: 1px 0; white-space: pre-wrap; word-break: break-all; color: #9fb0c0; }
+    .cloud-log .log-line.ok { color: #46d16f; }
+    .cloud-log .log-line.err { color: #ff6b6b; }
+    .form-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+    .form-row label { font-size: 12px; color: #8b98a5; min-width: 70px; }
+    .badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+    .badge-ok { background: #14532d; color: #46d16f; }
+    .badge-err { background: #450a0a; color: #ff6b6b; }
+    .badge-run { background: #451a03; color: #d1a546; }
+    .badge-pend { background: #1c232c; color: #8b98a5; }
+    .cfg-notice { color: #d1a546; font-size: 12px; }
   </style>
 </head>
 <body>
 <header>
-  <h1>Ads SDK — External Device Manager</h1>
-  <div class="muted">Devices &amp; apps connect over an MQTT message broker. Instruct any device to run on-device ad test scenarios and follow runs live.</div>
+  <h1>Ads SDK — Device Manager</h1>
+  <div class="muted">MQTT-connected devices + BrowserStack / TV Labs cloud testing</div>
+  <nav>
+    <button class="active" data-page="local">Local Devices</button>
+    <button data-page="cloud">☁ Cloud Testing</button>
+  </nav>
 </header>
-<main>
+
+<!-- ===================== LOCAL DEVICES PAGE ===================== -->
+<div class="page active" id="page-local">
+<div class="grid">
   <section>
     <h2>Connected devices</h2>
     <table><thead><tr><th>Device</th><th>Installed build</th><th>Status</th><th>Install / Run</th></tr></thead>
@@ -48,7 +90,7 @@
     <div style="margin-bottom:8px"><button id="build-btn">Build app → shared store</button>
       <span class="muted" id="shared-loc"></span></div>
     <table><thead><tr><th>Build</th><th>Version</th><th>Files</th><th>Built</th></tr></thead>
-      <tbody id="builds"><tr><td colspan="4" class="muted">No builds yet. Click “Build app”.</td></tr></tbody>
+      <tbody id="builds"><tr><td colspan="4" class="muted">No builds yet. Click "Build app".</td></tr></tbody>
     </table>
   </section>
   <section>
@@ -76,11 +118,110 @@
     <div class="muted" id="debug-run">Select a run to follow, or watch the latest.</div>
     <div id="debug"></div>
   </section>
-</main>
+</div>
+</div>
+
+<!-- ===================== CLOUD TESTING PAGE ===================== -->
+<div class="page" id="page-cloud">
+<div class="grid">
+
+  <!-- Provider + Device Picker -->
+  <section class="wide">
+    <h2>Cloud Devices</h2>
+    <div class="provider-tabs">
+      <button class="provider-tab active" id="tab-bs">BrowserStack</button>
+      <button class="provider-tab" id="tab-tv">TV Labs</button>
+      <span id="provider-cfg-notice" class="cfg-notice" style="margin-left:8px"></span>
+    </div>
+    <div class="cloud-grid">
+      <div>
+        <div style="margin-bottom:6px;display:flex;gap:6px;align-items:center">
+          <input type="text" id="device-filter" placeholder="Filter devices…" style="flex:1" />
+          <button class="secondary" id="refresh-devices-btn">Refresh</button>
+        </div>
+        <div class="device-list" id="device-list">
+          <div class="device-item"><span class="muted">Loading devices…</span></div>
+        </div>
+      </div>
+      <div>
+        <div id="selected-device-info">
+          <div class="muted" style="padding:8px">← Select a device from the list</div>
+        </div>
+        <div style="margin-top:12px">
+          <h2 style="margin-bottom:8px">Run Test</h2>
+          <div class="form-row">
+            <label>Platform</label>
+            <select id="cloud-platform">
+              <option value="android">Android</option>
+              <option value="ios">iOS</option>
+              <option value="tvos">tvOS</option>
+              <option value="webos">WebOS</option>
+              <option value="tizen">Tizen</option>
+              <option value="vizio">Vizio</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>Variant</label>
+            <select id="cloud-variant">
+              <option value="good">good</option>
+              <option value="bad">bad</option>
+              <option value="all">all</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>Scenario</label>
+            <select id="cloud-scenario">
+              <option value="">— all scenarios —</option>
+            </select>
+          </div>
+          <div style="margin-top:8px">
+            <button id="run-cloud-btn">▶ Start Test</button>
+            <span class="muted" id="cloud-run-status" style="margin-left:8px"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Cloud Sessions -->
+  <section>
+    <h2>Cloud Sessions</h2>
+    <table>
+      <thead><tr><th>Session</th><th>Provider</th><th>Platform</th><th>Status</th><th>Result</th></tr></thead>
+      <tbody id="cloud-sessions"><tr><td colspan="5" class="muted">No sessions yet.</td></tr></tbody>
+    </table>
+  </section>
+
+  <!-- Cloud Log Viewer -->
+  <section>
+    <h2>Live Session Log</h2>
+    <div class="muted" id="cloud-log-label">Select a session to view its log.</div>
+    <div class="cloud-log" id="cloud-log"></div>
+  </section>
+
+</div>
+</div>
 
 <script>
 (function () {
   'use strict';
+
+  // =====================================================================
+  // Page navigation
+  // =====================================================================
+  var navBtns = document.querySelectorAll('nav button[data-page]');
+  navBtns.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      navBtns.forEach(function (b) { b.classList.remove('active'); });
+      document.querySelectorAll('.page').forEach(function (p) { p.classList.remove('active'); });
+      btn.classList.add('active');
+      document.getElementById('page-' + btn.dataset.page).classList.add('active');
+    });
+  });
+
+  // =====================================================================
+  // Shared helpers
+  // =====================================================================
   var scenarios = [];
   var builds = [];
   var runsById = {};
@@ -97,9 +238,23 @@
   }
 
   function loadScenarios() {
-    return api('/api/scenarios').then(function (d) { scenarios = d.scenarios || []; });
+    return api('/api/scenarios').then(function (d) {
+      scenarios = d.scenarios || [];
+      // Populate cloud scenario selector
+      var sel = document.getElementById('cloud-scenario');
+      sel.innerHTML = '<option value="">— all scenarios —</option>';
+      scenarios.forEach(function (s) {
+        var o = document.createElement('option');
+        o.value = s.id;
+        o.textContent = s.title;
+        sel.appendChild(o);
+      });
+    });
   }
 
+  // =====================================================================
+  // LOCAL DEVICES tab
+  // =====================================================================
   function renderDevices(list) {
     var tb = document.getElementById('devices');
     if (!list.length) { tb.innerHTML = '<tr><td colspan="4" class="muted">No devices connected. Open <code>/app</code> on a device.</td></tr>'; return; }
@@ -145,7 +300,7 @@
     builds = list || builds;
     if (sharedLocation) document.getElementById('shared-loc').textContent = 'shared: ' + sharedLocation;
     var tb = document.getElementById('builds');
-    if (!builds.length) { tb.innerHTML = '<tr><td colspan="4" class="muted">No builds yet. Click “Build app”.</td></tr>'; return; }
+    if (!builds.length) { tb.innerHTML = '<tr><td colspan="4" class="muted">No builds yet. Click "Build app".</td></tr>'; return; }
     tb.innerHTML = '';
     builds.forEach(function (b) {
       var tr = document.createElement('tr');
@@ -225,7 +380,6 @@
 
   function upsertRun(run) { runsById[run.runId] = run; renderRuns(); }
 
-  // ---- Live debug follow-up ----
   function follow(runId) {
     followRunId = runId;
     document.getElementById('debug-run').textContent = 'Following run ' + runId.slice(0, 8);
@@ -248,24 +402,6 @@
     box.scrollTop = box.scrollHeight;
   }
 
-  function connectWs() {
-    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    var ws = new WebSocket(proto + '//' + location.host + '/ws');
-    ws.onmessage = function (ev) {
-      var msg = JSON.parse(ev.data);
-      if (msg.type === 'snapshot') { renderDevices(msg.devices || []); renderApps(msg.apps || []); }
-      else if (msg.type === 'device_connected' || msg.type === 'device_disconnected' || msg.type === 'device_updated' || msg.type === 'install') { refreshDevices(); refreshApps(); refreshOverview(); }
-      else if (msg.type === 'build') { refreshBuilds(); }
-      else if (msg.type === 'run_created') { upsertRun(msg.run); refreshDevices(); if (!followRunId || msg.run.status === 'dispatched') follow(msg.run.runId); }
-      else if (msg.type === 'debug') { if (msg.runId === followRunId) appendDebug(msg.event); }
-      else if (msg.type === 'result' || msg.type === 'run_all_complete') {
-        api('/api/runs/' + encodeURIComponent(msg.runId)).then(function (run) { if (run && run.runId) upsertRun(run); });
-        refreshDevices(); refreshOverview();
-      }
-    };
-    ws.onclose = function () { setTimeout(connectWs, 2000); };
-  }
-
   var buildBtn = document.getElementById('build-btn');
   buildBtn.addEventListener('click', function () {
     buildBtn.disabled = true;
@@ -277,7 +413,291 @@
       .then(function () { buildBtn.disabled = false; buildBtn.textContent = 'Build app → shared store'; });
   });
 
-  loadScenarios().then(function () { refreshBuilds().then(refreshDevices); refreshApps(); refreshOverview(); connectWs(); });
+  // =====================================================================
+  // CLOUD TESTING tab
+  // =====================================================================
+
+  var currentProvider = 'browserstack';
+  var allCloudDevices = [];   // full device list from API
+  var selectedDevice = null;  // currently highlighted device
+  var followCloudSessionId = null;
+  var cloudSessionsById = {};
+
+  // --- Provider tabs ---
+  document.getElementById('tab-bs').addEventListener('click', function () { switchProvider('browserstack'); });
+  document.getElementById('tab-tv').addEventListener('click', function () { switchProvider('tvlabs'); });
+
+  function switchProvider(p) {
+    currentProvider = p;
+    document.getElementById('tab-bs').classList.toggle('active', p === 'browserstack');
+    document.getElementById('tab-tv').classList.toggle('active', p === 'tvlabs');
+    selectedDevice = null;
+    renderSelectedDevice();
+    loadCloudDevices();
+  }
+
+  // Check which providers are configured
+  function checkProviders() {
+    api('/api/cloud/providers').then(function (prov) {
+      var notice = document.getElementById('provider-cfg-notice');
+      var msgs = [];
+      if (!prov.browserstack) msgs.push('BrowserStack: set BROWSERSTACK_USERNAME + BROWSERSTACK_ACCESS_KEY');
+      if (!prov.tvlabs) msgs.push('TV Labs: set TVLABS_API_KEY');
+      notice.textContent = msgs.length ? '⚠ Not configured: ' + msgs.join(' · ') : '';
+
+      document.getElementById('tab-bs').disabled = !prov.browserstack;
+      document.getElementById('tab-tv').disabled = !prov.tvlabs;
+
+      // Auto-select first available provider
+      if (!prov.browserstack && prov.tvlabs) switchProvider('tvlabs');
+      else loadCloudDevices();
+    }).catch(function () { loadCloudDevices(); });
+  }
+
+  // --- Device list ---
+  function loadCloudDevices() {
+    var listEl = document.getElementById('device-list');
+    listEl.innerHTML = '<div class="device-item"><span class="muted">Loading…</span></div>';
+    var endpoint = '/api/cloud/' + currentProvider + '/devices';
+    api(endpoint)
+      .then(function (d) {
+        allCloudDevices = d.devices || [];
+        renderDeviceList(document.getElementById('device-filter').value);
+      })
+      .catch(function (err) {
+        allCloudDevices = [];
+        listEl.innerHTML = '<div class="device-item"><span class="muted">Error loading devices — check credentials and server logs.</span></div>';
+      });
+  }
+
+  function normalizeDevice(d) {
+    // BrowserStack returns: { device, os, os_version, browser_version, … }
+    // TVLabs returns varied shapes; try common fields
+    return {
+      id: d.id || d.device_id || d.udid || d.device || String(Math.random()),
+      name: d.device || d.name || d.model || d.display_name || 'Unknown device',
+      os: d.os || d.platform || d.os_name || '',
+      osVersion: d.os_version || d.os_ver || d.platform_version || '',
+      browser: d.browser || d.browser_version || '',
+      raw: d,
+    };
+  }
+
+  function renderDeviceList(filter) {
+    var listEl = document.getElementById('device-list');
+    var q = (filter || '').toLowerCase().trim();
+    var items = allCloudDevices
+      .map(normalizeDevice)
+      .filter(function (d) {
+        if (!q) return true;
+        return (d.name + ' ' + d.os + ' ' + d.osVersion).toLowerCase().includes(q);
+      });
+
+    if (!items.length) {
+      listEl.innerHTML = '<div class="device-item"><span class="muted">No devices found.</span></div>';
+      return;
+    }
+    listEl.innerHTML = '';
+    items.forEach(function (d) {
+      var el = document.createElement('div');
+      el.className = 'device-item' + (selectedDevice && selectedDevice.id === d.id ? ' selected' : '');
+      el.innerHTML =
+        '<div class="device-name">' + esc(d.name) + '</div>' +
+        '<div class="device-meta">' + esc(d.os) + (d.osVersion ? ' ' + esc(d.osVersion) : '') +
+        (d.browser ? ' · ' + esc(d.browser) : '') + '</div>';
+      el.addEventListener('click', function () {
+        selectedDevice = d;
+        document.querySelectorAll('#device-list .device-item').forEach(function (i) { i.classList.remove('selected'); });
+        el.classList.add('selected');
+        renderSelectedDevice();
+      });
+      listEl.appendChild(el);
+    });
+  }
+
+  document.getElementById('device-filter').addEventListener('input', function () {
+    renderDeviceList(this.value);
+  });
+
+  document.getElementById('refresh-devices-btn').addEventListener('click', function () {
+    loadCloudDevices();
+  });
+
+  function renderSelectedDevice() {
+    var el = document.getElementById('selected-device-info');
+    if (!selectedDevice) {
+      el.innerHTML = '<div class="muted" style="padding:8px">← Select a device from the list</div>';
+      return;
+    }
+    var d = selectedDevice;
+    var raw = d.raw || {};
+    el.innerHTML =
+      '<div style="font-weight:600;margin-bottom:4px">' + esc(d.name) + '</div>' +
+      '<table style="font-size:12px">' +
+        (d.os ? '<tr><td class="muted">OS</td><td>' + esc(d.os) + (d.osVersion ? ' ' + esc(d.osVersion) : '') + '</td></tr>' : '') +
+        (d.browser ? '<tr><td class="muted">Browser</td><td>' + esc(d.browser) + '</td></tr>' : '') +
+        (raw.realMobile !== undefined ? '<tr><td class="muted">Real device</td><td>' + (raw.realMobile ? 'Yes' : 'No') + '</td></tr>' : '') +
+        (raw.status ? '<tr><td class="muted">Status</td><td>' + esc(raw.status) + '</td></tr>' : '') +
+      '</table>';
+  }
+
+  // --- Run cloud test ---
+  document.getElementById('run-cloud-btn').addEventListener('click', function () {
+    var provider = currentProvider;
+    var platform = document.getElementById('cloud-platform').value;
+    var variant = document.getElementById('cloud-variant').value;
+    var scenarioId = document.getElementById('cloud-scenario').value;
+    var statusEl = document.getElementById('cloud-run-status');
+
+    var body = {
+      provider: provider,
+      platform: platform,
+      variant: variant,
+      scenarioId: scenarioId || null,
+      deviceId: selectedDevice ? selectedDevice.id : null,
+      deviceName: selectedDevice ? selectedDevice.name : null,
+    };
+
+    statusEl.textContent = 'Starting session…';
+    fetch('/api/cloud/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (session) {
+        if (session.error) { statusEl.textContent = '❌ ' + session.error; return; }
+        statusEl.textContent = 'Session ' + session.sessionId.slice(0, 8) + ' started';
+        upsertCloudSession(session);
+        followCloudSession(session.sessionId);
+      })
+      .catch(function (err) {
+        statusEl.textContent = '❌ ' + String(err);
+      });
+  });
+
+  // --- Cloud sessions list ---
+  function upsertCloudSession(s) {
+    cloudSessionsById[s.sessionId] = s;
+    renderCloudSessions();
+  }
+
+  function renderCloudSessions() {
+    var tb = document.getElementById('cloud-sessions');
+    var list = Object.values(cloudSessionsById).slice(-30).reverse();
+    if (!list.length) {
+      tb.innerHTML = '<tr><td colspan="5" class="muted">No sessions yet.</td></tr>';
+      return;
+    }
+    tb.innerHTML = '';
+    list.forEach(function (s) {
+      var badge = s.status === 'completed' ? 'badge-ok'
+        : s.status === 'failed' ? 'badge-err'
+        : s.status === 'running' ? 'badge-run'
+        : 'badge-pend';
+      var result = s.result ? (s.result.status || '') : '—';
+      var tr = document.createElement('tr');
+      tr.style.cursor = 'pointer';
+      tr.innerHTML =
+        '<td><code>' + esc(s.sessionId.slice(0, 8)) + '</code>' +
+          '<div class="muted">' + esc((s.createdAt || '').slice(0, 19).replace('T', ' ')) + '</div></td>' +
+        '<td>' + esc(s.provider) + '</td>' +
+        '<td>' + esc(s.platform) + (s.deviceName ? '<div class="muted">' + esc(s.deviceName) + '</div>' : '') + '</td>' +
+        '<td><span class="badge ' + badge + '">' + esc(s.status) + '</span></td>' +
+        '<td class="st ' + esc(s.result ? s.result.status : '') + '">' + esc(result) + '</td>';
+      tr.addEventListener('click', function () { followCloudSession(s.sessionId); });
+      tb.appendChild(tr);
+    });
+  }
+
+  // --- Cloud log viewer ---
+  function followCloudSession(sessionId) {
+    followCloudSessionId = sessionId;
+    var logEl = document.getElementById('cloud-log');
+    var labelEl = document.getElementById('cloud-log-label');
+    labelEl.textContent = 'Session ' + sessionId.slice(0, 8);
+    logEl.innerHTML = '';
+    api('/api/cloud/sessions/' + encodeURIComponent(sessionId) + '/logs')
+      .then(function (d) {
+        (d.logs || []).forEach(function (entry) { appendCloudLog(entry); });
+        logEl.scrollTop = logEl.scrollHeight;
+      })
+      .catch(function () {});
+  }
+
+  function appendCloudLog(entry) {
+    if (entry.sessionId && entry.sessionId !== followCloudSessionId) return;
+    var logEl = document.getElementById('cloud-log');
+    var line = document.createElement('div');
+    var text = entry.line || '';
+    line.className = 'log-line' + (text.startsWith('✅') || text.startsWith('▶') ? ' ok' : text.startsWith('❌') ? ' err' : '');
+    var ts = (entry.ts || '').slice(11, 23);
+    line.textContent = (ts ? ts + '  ' : '') + text;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  // --- Load initial cloud sessions ---
+  function refreshCloudSessions() {
+    api('/api/cloud/sessions').then(function (d) {
+      (d.sessions || []).forEach(function (s) { cloudSessionsById[s.sessionId] = s; });
+      renderCloudSessions();
+    }).catch(function () {});
+  }
+
+  // =====================================================================
+  // Shared WebSocket (local devices + cloud session live updates)
+  // =====================================================================
+  function connectWs() {
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var ws = new WebSocket(proto + '//' + location.host + '/ws');
+    ws.onmessage = function (ev) {
+      var msg = JSON.parse(ev.data);
+      if (msg.type === 'snapshot') {
+        renderDevices(msg.devices || []);
+        renderApps(msg.apps || []);
+        // Seed cloud sessions from snapshot
+        (msg.cloudSessions || []).forEach(function (s) { cloudSessionsById[s.sessionId] = s; });
+        renderCloudSessions();
+      }
+      else if (msg.type === 'device_connected' || msg.type === 'device_disconnected' || msg.type === 'device_updated' || msg.type === 'install') {
+        refreshDevices(); refreshApps(); refreshOverview();
+      }
+      else if (msg.type === 'build') { refreshBuilds(); }
+      else if (msg.type === 'run_created') {
+        upsertRun(msg.run); refreshDevices();
+        if (!followRunId || msg.run.status === 'dispatched') follow(msg.run.runId);
+      }
+      else if (msg.type === 'debug') {
+        if (msg.runId === followRunId) appendDebug(msg.event);
+      }
+      else if (msg.type === 'result' || msg.type === 'run_all_complete') {
+        api('/api/runs/' + encodeURIComponent(msg.runId)).then(function (run) { if (run && run.runId) upsertRun(run); });
+        refreshDevices(); refreshOverview();
+      }
+      // Cloud events
+      else if (msg.type === 'cloud_session_update') {
+        upsertCloudSession(msg.session);
+      }
+      else if (msg.type === 'cloud_log') {
+        if (msg.sessionId === followCloudSessionId) appendCloudLog(msg.entry);
+      }
+    };
+    ws.onclose = function () { setTimeout(connectWs, 2000); };
+  }
+
+  // =====================================================================
+  // Boot
+  // =====================================================================
+  loadScenarios().then(function () {
+    refreshBuilds().then(refreshDevices);
+    refreshApps();
+    refreshOverview();
+    connectWs();
+    checkProviders();
+    refreshCloudSessions();
+  });
+
 })();
 </script>
 </body>

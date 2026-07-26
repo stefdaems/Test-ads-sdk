@@ -52,6 +52,7 @@ const Catalogue = require('../shared/catalogue.js');
 const Topics = require('../shared/topics.js');
 const Builds = require('../shared/builds.js');
 const { startEmbeddedBroker } = require('./broker.js');
+const Cloud = require('./cloud.js');
 
 const PORT = parseInt(process.env.PORT || '8090', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -508,6 +509,54 @@ const server = http.createServer(async (req, res) => {
       const out = dispatchRun(m[1], null, true);
       return json(res, out.code || 202, out);
     }
+
+    // -----------------------------------------------------------------------
+    // Cloud device testing routes (BrowserStack / TV Labs)
+    // -----------------------------------------------------------------------
+    if (req.method === 'GET' && url === '/api/cloud/providers') {
+      return json(res, 200, Cloud.getProviders());
+    }
+    if (req.method === 'GET' && url === '/api/cloud/browserstack/devices') {
+      try {
+        const devices = await Cloud.getBrowserStackDevices();
+        return json(res, 200, { provider: 'browserstack', devices });
+      } catch (err) {
+        return json(res, 502, { error: 'browserstack_error', detail: err.message });
+      }
+    }
+    if (req.method === 'GET' && url === '/api/cloud/tvlabs/devices') {
+      try {
+        const devices = await Cloud.getTvLabsDevices();
+        return json(res, 200, { provider: 'tvlabs', devices });
+      } catch (err) {
+        return json(res, 502, { error: 'tvlabs_error', detail: err.message });
+      }
+    }
+    if (req.method === 'GET' && url === '/api/cloud/sessions') {
+      return json(res, 200, { sessions: Cloud.listCloudSessions() });
+    }
+    m = url.match(/^\/api\/cloud\/sessions\/([^/?]+)\/logs$/);
+    if (req.method === 'GET' && m) {
+      const session = Cloud.getCloudSession(m[1]);
+      if (!session) return json(res, 404, { error: 'session_not_found' });
+      return json(res, 200, { sessionId: session.sessionId, logs: session.logs });
+    }
+    m = url.match(/^\/api\/cloud\/sessions\/([^/?]+)$/);
+    if (req.method === 'GET' && m) {
+      const session = Cloud.getCloudSession(m[1]);
+      if (!session) return json(res, 404, { error: 'session_not_found' });
+      return json(res, 200, Cloud.sessionSnapshot(session));
+    }
+    if (req.method === 'POST' && url === '/api/cloud/sessions') {
+      const body = await readBody(req);
+      if (!body.provider || !body.platform) {
+        return json(res, 400, { error: 'provider_and_platform_required' });
+      }
+      const session = Cloud.createCloudSession(body);
+      Cloud.runCloudSession(session, broadcastOperators);
+      return json(res, 202, Cloud.sessionSnapshot(session));
+    }
+
     return json(res, 404, { error: 'not_found' });
   }
 
@@ -525,6 +574,7 @@ wss.on('connection', (ws) => {
     type: 'snapshot',
     devices: Array.from(devices.values()).map(deviceSummary),
     apps: Array.from(apps.values()).map(appSummary),
+    cloudSessions: Cloud.listCloudSessions(),
   }));
   ws.on('close', () => operators.delete(ws));
 });
