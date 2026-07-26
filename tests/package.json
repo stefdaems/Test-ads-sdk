@@ -4,6 +4,7 @@
   "description": "TypeScript/Jest + Appium + Playwright cross-platform tests for the Ads SDK device lab",
   "scripts": {
     "test":              "jest",
+    "test:api":          "jest --testPathPattern=api/",
     "test:consent":      "jest --testPathPattern=consent/",
     "test:network":      "jest --testPathPattern=network/",
     "test:viewability":  "jest --testPathPattern=viewability/",

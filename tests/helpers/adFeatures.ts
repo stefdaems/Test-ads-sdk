@@ -81,10 +81,15 @@ export const TRACKING_PATTERNS = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// VAST / VMAP fixture URLs
+// VAST / VMAP fixture URLs — Google test tags (fallback)
 //
 // These point to stable public test-infrastructure endpoints.
 // Replace with production test PIDs before running a final release check.
+//
+// When OPTIVIEW_API_KEY + OPTIVIEW_ORG_ID are set in the environment the
+// helpers below will generate live VAST tags from the OptiView backend
+// instead. Use getVastFixtures() in test files to pick up the right set
+// automatically.
 // ---------------------------------------------------------------------------
 
 export const VAST_FIXTURES = {
@@ -112,6 +117,70 @@ export const VAST_FIXTURES = {
   /** VAST wrapper chain (2 hops) */
   wrapper: 'https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/single_ad_samples&sz=640x480&cust_params=sample_ct%3Dlinearvpaid2js&ciu_szs=300x250%2C728x90&gdfp_req=1&output=vast&unviewed_position_start=1&env=vp&impl=s&correlator=',
 } as const;
+
+// ---------------------------------------------------------------------------
+// OptiView live VAST fixtures
+//
+// Generated from the real OptiView backend when credentials are available.
+// The URLs are self-authenticating (org_id + api_key as query params) so
+// they can be passed directly to any video player.
+// ---------------------------------------------------------------------------
+
+const _OPTIVIEW_BASE  = process.env.OPTIVIEW_API_BASE_URL ?? 'https://optiview-ads-api-phx-1.staging.dolbyio.com/api/v1';
+const _OPTIVIEW_KEY   = process.env.OPTIVIEW_API_KEY   ?? '';
+const _OPTIVIEW_ORG   = process.env.OPTIVIEW_ORG_ID    ?? '';
+
+function _optiviewVastUrl(extra: Record<string, string> = {}): string {
+  const url = new URL(_OPTIVIEW_BASE + '/vast');
+  url.searchParams.set('org_id',  _OPTIVIEW_ORG);
+  url.searchParams.set('api_key', _OPTIVIEW_KEY);
+  url.searchParams.set('format',  'vast');
+  url.searchParams.set('sz',      '640x480');
+  for (const [k, v] of Object.entries(extra)) url.searchParams.set(k, v);
+  return url.toString();
+}
+
+/**
+ * VAST tag URLs backed by the live OptiView staging API.
+ *
+ * All keys mirror VAST_FIXTURES so they are drop-in replacements in test
+ * files.  When OPTIVIEW_API_KEY / OPTIVIEW_ORG_ID are absent, these URLs
+ * will still be syntactically valid but will return 401 from the backend.
+ */
+export const OPTIVIEW_VAST_FIXTURES = {
+  linear15s:  _optiviewVastUrl({ ad_type: 'linear', duration: '15' }),
+  linear30s:  _optiviewVastUrl({ ad_type: 'linear', duration: '30' }),
+  skippable:  _optiviewVastUrl({ ad_type: 'skippable', skip_offset: '5' }),
+  nonLinear:  _optiviewVastUrl({ ad_type: 'nonlinear' }),
+  pod3:       _optiviewVastUrl({ ad_type: 'pod', pod_size: '3' }),
+  vmap:       (() => {
+    const url = new URL(_OPTIVIEW_BASE + '/vast');
+    url.searchParams.set('org_id',  _OPTIVIEW_ORG);
+    url.searchParams.set('api_key', _OPTIVIEW_KEY);
+    url.searchParams.set('format',  'vmap');
+    url.searchParams.set('sz',      '640x480');
+    return url.toString();
+  })(),
+  empty:      _optiviewVastUrl({ ad_type: 'empty' }),
+  wrapper:    _optiviewVastUrl({ ad_type: 'wrapper' }),
+} as const;
+
+/**
+ * Returns OptiView live VAST fixtures when credentials are configured,
+ * otherwise falls back to Google test fixtures.
+ *
+ * Use this in all player and network tests to automatically exercise the
+ * real backend when credentials are available:
+ *
+ *   import { getVastFixtures } from '../helpers/adFeatures';
+ *   const FIXTURES = getVastFixtures();
+ */
+export function getVastFixtures(): typeof VAST_FIXTURES | typeof OPTIVIEW_VAST_FIXTURES {
+  if (_OPTIVIEW_KEY !== '' && _OPTIVIEW_ORG !== '') {
+    return OPTIVIEW_VAST_FIXTURES;
+  }
+  return VAST_FIXTURES;
+}
 
 // ---------------------------------------------------------------------------
 // Feature matrix — maps feature name → supported players

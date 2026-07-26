@@ -120,9 +120,10 @@ all ship a browser/WebView, so a single HTML app runs everywhere without native
 build tooling. The app is self-contained: it uses a **reference SDK adapter**
 (`app/sdk-adapter.js`) that models the correct Ads SDK behaviour, so every scenario
 is executable out of the box. `create()` in the adapter is the single integration
-point for wiring in the **real** SDK: when `window.AdsSDK` is present it reports
-`backend: "real"`, which is where a thin delegating wrapper is added to forward
-calls to the real SDK.
+point for wiring in the **real** SDK: when `window.AdsSDK` is present the adapter
+returns a `RealSdkWrapper` that delegates every API call to the real SDK, intercepts
+network requests for pixel-count assertions, and bridges the real SDK's events onto
+the adapter's canonical event stream. See **Plugging in the real Ads SDK** below.
 
 ## Layout
 
@@ -291,11 +292,20 @@ any failure, so it is CI-friendly.
 ## Plugging in the real Ads SDK
 
 1. Host the real SDK build alongside the app (or reference it by URL).
-2. Add its `<script>` to `app/index.html` **before** `sdk-adapter.js`.
-3. Ensure it exposes a global (default expected name: `window.AdsSDK`) whose surface
-   matches the adapter's contract (`init`, `setConsent`, `loadAd(opts, cb)`, `click`,
+2. Add its `<script>` to `app/index.html` **before** `sdk-adapter.js`, so it
+   sets `window.AdsSDK` before the adapter initialises.
+3. Ensure it exposes a global named `window.AdsSDK` whose surface matches the
+   adapter's contract (`init`, `setConsent`, `loadAd(opts, cb)`, `click`,
    `skip`, `setNetwork`, `setHidden`, `destroy`, plus event emission via `on`).
-4. In `create()` (`app/sdk-adapter.js`), the `backend: "real"` branch is where a
-   thin wrapper delegates the contract methods to `window.AdsSDK` and bridges its
-   events onto `_emit`. Once wired, every scenario exercises the real SDK; until
-   then the reference implementation runs as the executable spec.
+4. The adapter's `create()` factory automatically detects `window.AdsSDK` and
+   returns a `RealSdkWrapper` instead of the reference implementation. The
+   wrapper:
+   - delegates all API calls (`init`, `loadAd`, `destroy`, …) to the real SDK;
+   - intercepts `fetch`, `XMLHttpRequest`, and `sendBeacon` to capture every
+     outbound request, enabling `pixelCount`, `insecureRequestCount`, and
+     `requestsMissingConsentHeader` assertions;
+   - bridges the real SDK's events (camelCase or snake_case) onto the
+     adapter's canonical snake_case event stream via `_emit`.
+5. Once wired, every scenario exercises the real SDK with no other changes
+   required. The reference implementation continues to run as the executable
+   spec when `window.AdsSDK` is absent.
