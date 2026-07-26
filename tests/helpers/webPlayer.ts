@@ -204,9 +204,14 @@ export async function simulatePageVisible(page: Page): Promise<void> {
   });
 }
 
-/** Intercept all requests to block a specific URL pattern (simulate 404). */
 export async function blockUrl(page: Page, pattern: string | RegExp): Promise<void> {
-  await page.route(pattern, (route: Route) => route.abort('failed'));
+  await page.route(pattern, (route: Route) =>
+    route.fulfill({
+      status: 404,
+      contentType: 'text/plain',
+      body: 'Not Found',
+    }),
+  );
 }
 
 /**
