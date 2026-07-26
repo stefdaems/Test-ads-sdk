@@ -51,6 +51,12 @@
   var scenarios = [];
   var runsById = {};
 
+  function esc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
   function api(path, opts) {
     return fetch(path, opts).then(function (r) { return r.json(); });
   }
@@ -64,21 +70,21 @@
     if (!list.length) { tb.innerHTML = '<tr><td colspan="4" class="muted">No devices connected. Open <code>/app</code> on a device.</td></tr>'; return; }
     tb.innerHTML = '';
     list.forEach(function (d) {
-      var opts = scenarios.map(function (s) { return '<option value="' + s.id + '">' + s.title + '</option>'; }).join('');
+      var opts = scenarios.map(function (s) { return '<option value="' + esc(s.id) + '">' + esc(s.title) + '</option>'; }).join('');
       var tr = document.createElement('tr');
       tr.innerHTML =
-        '<td><code>' + d.id.slice(0, 8) + '</code><div class="muted">' + d.model + '</div></td>' +
-        '<td>' + d.platform + '<div class="muted">' + d.make + '</div></td>' +
-        '<td class="st ' + d.status + '">' + d.status + '</td>' +
+        '<td><code>' + esc(d.id.slice(0, 8)) + '</code><div class="muted">' + esc(d.model) + '</div></td>' +
+        '<td>' + esc(d.platform) + '<div class="muted">' + esc(d.make) + '</div></td>' +
+        '<td class="st ' + esc(d.status) + '">' + esc(d.status) + '</td>' +
         '<td><select data-sel>' + opts + '</select> ' +
           '<button data-run>Run</button> <button class="secondary" data-all>All</button></td>';
       tb.appendChild(tr);
       tr.querySelector('[data-run]').addEventListener('click', function () {
         var sid = tr.querySelector('[data-sel]').value;
-        api('/api/devices/' + d.id + '/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scenarioId: sid }) });
+        api('/api/devices/' + encodeURIComponent(d.id) + '/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scenarioId: sid }) });
       });
       tr.querySelector('[data-all]').addEventListener('click', function () {
-        api('/api/devices/' + d.id + '/run-all', { method: 'POST' });
+        api('/api/devices/' + encodeURIComponent(d.id) + '/run-all', { method: 'POST' });
       });
     });
   }
@@ -94,10 +100,10 @@
       var tr = document.createElement('tr');
       var passed = r.results.reduce(function (n, x) { return n + (x.status === 'passed' ? 1 : 0); }, 0);
       tr.innerHTML =
-        '<td><code>' + r.runId.slice(0, 8) + '</code></td>' +
-        '<td><code>' + r.deviceId.slice(0, 8) + '</code></td>' +
-        '<td>' + (r.scenarioId || 'ALL') + '</td>' +
-        '<td class="st ' + r.status + '">' + r.status + ' (' + passed + '/' + r.results.length + ')</td>';
+        '<td><code>' + esc(r.runId.slice(0, 8)) + '</code></td>' +
+        '<td><code>' + esc(r.deviceId.slice(0, 8)) + '</code></td>' +
+        '<td>' + esc(r.scenarioId || 'ALL') + '</td>' +
+        '<td class="st ' + esc(r.status) + '">' + esc(r.status) + ' (' + passed + '/' + r.results.length + ')</td>';
       tr.style.cursor = 'pointer';
       tr.addEventListener('click', function () { showDetail(r); });
       tb.appendChild(tr);
@@ -106,7 +112,7 @@
 
   function showDetail(r) {
     document.getElementById('detail').innerHTML =
-      '<h2>Run ' + r.runId.slice(0, 8) + '</h2><pre>' + JSON.stringify(r, null, 2) + '</pre>';
+      '<h2>Run ' + esc(r.runId.slice(0, 8)) + '</h2><pre>' + esc(JSON.stringify(r, null, 2)) + '</pre>';
   }
 
   function upsertRun(run) { runsById[run.runId] = run; renderRuns(); }
@@ -120,7 +126,7 @@
       else if (msg.type === 'device_connected' || msg.type === 'device_disconnected') { refreshDevices(); }
       else if (msg.type === 'run_created') { upsertRun(msg.run); refreshDevices(); }
       else if (msg.type === 'result' || msg.type === 'run_all_complete') {
-        api('/api/runs/' + msg.runId).then(function (run) { if (run && run.runId) upsertRun(run); });
+        api('/api/runs/' + encodeURIComponent(msg.runId)).then(function (run) { if (run && run.runId) upsertRun(run); });
         refreshDevices();
       }
     };

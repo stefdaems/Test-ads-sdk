@@ -399,8 +399,8 @@
    */
   function run(id, env) {
     env = env || {};
-    var runner = RUNNERS[id];
-    if (!runner) {
+    var runner = Object.prototype.hasOwnProperty.call(RUNNERS, id) ? RUNNERS[id] : null;
+    if (typeof runner !== 'function') {
       return Promise.resolve({
         id: id, status: 'failed', assertions: [{ name: 'scenario exists', ok: false, detail: 'unknown id' }], events: [],
       });
