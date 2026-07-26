@@ -75,7 +75,10 @@ function hashFiles(files) {
 }
 
 function main() {
-  const version = arg('version', readVersion());
+  const rawVersion = arg('version', readVersion());
+  // Sanitize: the version becomes part of a filesystem path (buildId), so keep it
+  // to a safe character set to prevent path traversal / arbitrary writes.
+  const version = String(rawVersion).replace(/[^A-Za-z0-9._-]/g, '').slice(0, 64) || readVersion();
   const files = collectFiles();
   const hash = hashFiles(files);
   const buildId = version + '+' + hash.slice(0, 12);
