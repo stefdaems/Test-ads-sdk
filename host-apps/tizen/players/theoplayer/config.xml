@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns="http://www.w3.org/ns/widgets"
+        xmlns:tizen="http://tizen.org/ns/widgets"
+        id="com.adsdk.test.theoplayer"
+        version="1.0.0">
+  <name>Ads SDK Test — THEOplayer</name>
+  <tizen:application id="AdsSDKTHEO.theoplayer"
+                     package="AdsSDKTHEO"
+                     required_version="5.5"/>
+  <content src="index.html"/>
+  <feature name="http://tizen.org/feature/network.internet"/>
+  <tizen:privilege name="http://tizen.org/privilege/internet"/>
+  <tizen:profile name="tv-samsung"/>
+  <icon src="icon.png"/>
+</widget>

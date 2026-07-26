@@ -42,6 +42,18 @@
  *   Web     : theoplayer | shaka | videojs | bitmovin | all (default)
  *   Android : exoplayer  | shaka | theoplayer | bitmovin | all (default)
  *   iOS     : theoplayer | bitmovin | all (default)
+ *   WebOS   : theoplayer | shaka | all (default)
+ *   Tizen   : theoplayer | shaka | all (default)
+ *   Vizio   : theoplayer | all (default)
+ *
+ * WebOS packaging (requires LG webOS CLI — npm i -g @webos-tools/cli):
+ *   ts-node scripts/install-apps.ts --platform webos --remote tvlabs
+ *
+ * Tizen packaging (requires Tizen Studio CLI on PATH):
+ *   ts-node scripts/install-apps.ts --platform tizen --remote tvlabs
+ *
+ * Vizio packaging (bundles app as a ZIP for SmartCast Portal upload):
+ *   ts-node scripts/install-apps.ts --platform vizio --remote tvlabs
  */
 
 import { execSync, execFileSync, ExecSyncOptions } from 'child_process';
@@ -52,11 +64,14 @@ import * as fs from 'fs';
 // Types
 // ---------------------------------------------------------------------------
 
-type Platform = 'ios' | 'android' | 'tvos' | 'web' | 'all';
+type Platform = 'ios' | 'android' | 'tvos' | 'web' | 'webos' | 'tizen' | 'vizio' | 'all';
 type Variant = 'good' | 'bad' | 'all';
 type WebPlayer    = 'theoplayer' | 'shaka' | 'videojs' | 'bitmovin' | 'all';
 type AndroidPlayer = 'exoplayer' | 'shaka' | 'theoplayer' | 'bitmovin' | 'all';
 type IosPlayer    = 'theoplayer' | 'bitmovin' | 'all';
+type WebOsPlayer  = 'theoplayer' | 'shaka' | 'all';
+type TizenPlayer  = 'theoplayer' | 'shaka' | 'all';
+type VizioPlayer  = 'theoplayer' | 'all';
 type RemoteTarget = 'browserstack' | 'aws' | 'firebase' | 'tvlabs';
 
 interface InstallOptions {
@@ -100,7 +115,7 @@ function parseArgs(): InstallOptions {
   const remote = remoteIdx !== -1 ? args[remoteIdx + 1] as RemoteTarget : undefined;
   const agentHost = agentHostIdx !== -1 ? args[agentHostIdx + 1] : undefined;
 
-  const validPlatforms: Platform[] = ['ios', 'android', 'tvos', 'web', 'all'];
+  const validPlatforms: Platform[] = ['ios', 'android', 'tvos', 'web', 'webos', 'tizen', 'vizio', 'all'];
   const validVariants: Variant[] = ['good', 'bad', 'all'];
   const validRemotes: RemoteTarget[] = ['browserstack', 'aws', 'firebase', 'tvlabs'];
 
@@ -114,6 +129,10 @@ function parseArgs(): InstallOptions {
   }
   if (remote && !validRemotes.includes(remote)) {
     console.error(`❌ Invalid remote "${remote}". Choose from: ${validRemotes.join(', ')}`);
+    process.exit(1);
+  }
+  if (remote && (platform === 'web' || platform === 'webos' || platform === 'tizen' || platform === 'vizio') && remote === 'aws') {
+    console.error(`❌ AWS Device Farm does not support the ${platform} platform.`);
     process.exit(1);
   }
   if (remote && platform === 'web') {
@@ -587,6 +606,163 @@ function installWeb(variant: Variant, player: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// WebOS installer
+// ---------------------------------------------------------------------------
+
+function installWebOs(variant: Variant, player: string, remote?: RemoteTarget): void {
+  const allPlayers: WebOsPlayer[] = ['theoplayer', 'shaka'];
+  const targetPlayers: WebOsPlayer[] = player === 'all'
+    ? allPlayers
+    : allPlayers.filter(p => p === player) as WebOsPlayer[];
+
+  const PLAYER_PORTS: Record<Exclude<WebOsPlayer, 'all'>, number> = {
+    theoplayer: 4000,
+    shaka:      4001,
+  };
+
+  for (const p of targetPlayers) {
+    for (const v of getVariants(variant)) {
+      const dir = path.join(HOST_APPS, 'webos', 'players', p, v);
+      const indexHtml = path.join(dir, 'index.html');
+      if (!fs.existsSync(indexHtml)) {
+        console.warn(`⚠ ${dir}/index.html not found — skipping.`);
+        continue;
+      }
+
+      if (remote) {
+        // Copy the per-player appinfo.json into the variant dir before packaging.
+        const appInfoSrc = path.join(HOST_APPS, 'webos', 'players', p, 'appinfo.json');
+        if (fs.existsSync(appInfoSrc)) {
+          fs.copyFileSync(appInfoSrc, path.join(dir, 'appinfo.json'));
+        }
+        const buildDir = path.join(HOST_APPS, 'webos', 'players', p, 'build', v);
+        fs.mkdirSync(buildDir, { recursive: true });
+        console.log(`\n📺 WebOS ${p} ${v} — packaging with ares-package…`);
+        run(`ares-package "${dir}" -o "${buildDir}"`, dir);
+        // ares-package names the .ipk after the app id and version in appinfo.json
+        const ipkFiles = fs.readdirSync(buildDir).filter(f => f.endsWith('.ipk'));
+        if (ipkFiles.length === 0) throw new Error(`No .ipk found in ${buildDir}`);
+        const ipkPath = path.join(buildDir, ipkFiles[0]);
+        if (remote === 'tvlabs') {
+          uploadToTvLabs(ipkPath);
+        } else if (remote === 'browserstack') {
+          uploadToBrowserStack(ipkPath);
+        } else {
+          console.log(`✅ WebOS package: ${ipkPath}`);
+        }
+      } else {
+        const port = PLAYER_PORTS[p as Exclude<WebOsPlayer, 'all'>] + (v === 'bad' ? 10 : 0);
+        console.log(`\n📺 WebOS ${p} ${v} — starting local server on port ${port}…`);
+        run(`npx serve . --listen ${port} --no-clipboard`, dir);
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tizen installer
+// ---------------------------------------------------------------------------
+
+function installTizen(variant: Variant, player: string, remote?: RemoteTarget): void {
+  const allPlayers: TizenPlayer[] = ['theoplayer', 'shaka'];
+  const targetPlayers: TizenPlayer[] = player === 'all'
+    ? allPlayers
+    : allPlayers.filter(p => p === player) as TizenPlayer[];
+
+  const PLAYER_PORTS: Record<Exclude<TizenPlayer, 'all'>, number> = {
+    theoplayer: 4010,
+    shaka:      4011,
+  };
+
+  for (const p of targetPlayers) {
+    for (const v of getVariants(variant)) {
+      const dir = path.join(HOST_APPS, 'tizen', 'players', p, v);
+      const indexHtml = path.join(dir, 'index.html');
+      if (!fs.existsSync(indexHtml)) {
+        console.warn(`⚠ ${dir}/index.html not found — skipping.`);
+        continue;
+      }
+
+      if (remote) {
+        // Copy the per-player config.xml into the variant dir before packaging.
+        const configSrc = path.join(HOST_APPS, 'tizen', 'players', p, 'config.xml');
+        if (fs.existsSync(configSrc)) {
+          fs.copyFileSync(configSrc, path.join(dir, 'config.xml'));
+        }
+        const buildDir = path.join(HOST_APPS, 'tizen', 'players', p, 'build', v);
+        fs.mkdirSync(buildDir, { recursive: true });
+        console.log(`\n📺 Tizen ${p} ${v} — packaging with tizen CLI…`);
+        run(`tizen package -t wgt -o "${buildDir}" -- "${dir}"`, dir);
+        const wgtFiles = fs.readdirSync(buildDir).filter(f => f.endsWith('.wgt'));
+        if (wgtFiles.length === 0) throw new Error(`No .wgt found in ${buildDir}`);
+        const wgtPath = path.join(buildDir, wgtFiles[0]);
+        if (remote === 'tvlabs') {
+          uploadToTvLabs(wgtPath);
+        } else if (remote === 'browserstack') {
+          uploadToBrowserStack(wgtPath);
+        } else {
+          console.log(`✅ Tizen package: ${wgtPath}`);
+        }
+      } else {
+        const port = PLAYER_PORTS[p as Exclude<TizenPlayer, 'all'>] + (v === 'bad' ? 10 : 0);
+        console.log(`\n📺 Tizen ${p} ${v} — starting local server on port ${port}…`);
+        run(`npx serve . --listen ${port} --no-clipboard`, dir);
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Vizio installer
+// ---------------------------------------------------------------------------
+
+function installVizio(variant: Variant, player: string, remote?: RemoteTarget): void {
+  const allPlayers: VizioPlayer[] = ['theoplayer'];
+  const targetPlayers: VizioPlayer[] = player === 'all'
+    ? allPlayers
+    : allPlayers.filter(p => p === player) as VizioPlayer[];
+
+  const PLAYER_PORTS: Record<Exclude<VizioPlayer, 'all'>, number> = {
+    theoplayer: 4020,
+  };
+
+  for (const p of targetPlayers) {
+    for (const v of getVariants(variant)) {
+      const dir = path.join(HOST_APPS, 'vizio', 'players', p, v);
+      const indexHtml = path.join(dir, 'index.html');
+      if (!fs.existsSync(indexHtml)) {
+        console.warn(`⚠ ${dir}/index.html not found — skipping.`);
+        continue;
+      }
+
+      if (remote) {
+        // Copy the manifest.json into the variant dir before zipping.
+        const manifestSrc = path.join(HOST_APPS, 'vizio', 'players', p, 'manifest.json');
+        if (fs.existsSync(manifestSrc)) {
+          fs.copyFileSync(manifestSrc, path.join(dir, 'manifest.json'));
+        }
+        const buildDir = path.join(HOST_APPS, 'vizio', 'players', p, 'build', v);
+        fs.mkdirSync(buildDir, { recursive: true });
+        const zipPath = path.join(buildDir, `vizio-${p}-${v}.zip`);
+        console.log(`\n📺 Vizio ${p} ${v} — bundling as ZIP…`);
+        run(`zip -r "${zipPath}" .`, dir);
+        if (remote === 'tvlabs') {
+          uploadToTvLabs(zipPath);
+        } else if (remote === 'browserstack') {
+          uploadToBrowserStack(zipPath);
+        } else {
+          console.log(`✅ Vizio package: ${zipPath}`);
+        }
+      } else {
+        const port = PLAYER_PORTS[p as Exclude<VizioPlayer, 'all'>] + (v === 'bad' ? 10 : 0);
+        console.log(`\n📺 Vizio ${p} ${v} — starting local server on port ${port}…`);
+        run(`npx serve . --listen ${port} --no-clipboard`, dir);
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -602,7 +778,7 @@ function main(): void {
   console.log(`   SDK URL    : https://Ads-sdk.xnappet.live\n`);
 
   const platforms: Array<Exclude<Platform, 'all'>> =
-    platform === 'all' ? ['ios', 'android', 'tvos', 'web'] : [platform];
+    platform === 'all' ? ['ios', 'android', 'tvos', 'web', 'webos', 'tizen', 'vizio'] : [platform];
 
   for (const p of platforms) {
     switch (p) {
@@ -617,6 +793,15 @@ function main(): void {
         break;
       case 'web':
         installWeb(variant, player);
+        break;
+      case 'webos':
+        installWebOs(variant, player, remote);
+        break;
+      case 'tizen':
+        installTizen(variant, player, remote);
+        break;
+      case 'vizio':
+        installVizio(variant, player, remote);
         break;
     }
   }

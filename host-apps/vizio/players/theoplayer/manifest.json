@@ -1,0 +1,8 @@
+{
+  "name": "Ads SDK Test — THEOplayer",
+  "version": "1.0.0",
+  "app_id": "com.adsdk.test.theoplayer",
+  "entry": "index.html",
+  "resolution": "1920x1080",
+  "vendor": "Ads SDK Test"
+}

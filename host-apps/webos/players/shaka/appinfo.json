@@ -1,0 +1,11 @@
+{
+  "id": "com.adsdk.test.shaka",
+  "version": "1.0.0",
+  "vendor": "Ads SDK Test",
+  "type": "web",
+  "main": "index.html",
+  "title": "Ads SDK Test — Shaka",
+  "icon": "icon.png",
+  "largeIcon": "icon.png",
+  "resolution": "1920x1080"
+}

@@ -1,0 +1,31 @@
+#!/usr/bin/env sh
+# ---------------------------------------------------------------------------
+# Gradle wrapper — downloads Gradle automatically if not already cached.
+# For projects that do not ship the binary gradle-wrapper.jar, this script
+# falls back to downloading the Gradle distribution directly.
+# ---------------------------------------------------------------------------
+set -e
+
+GRADLE_VERSION="8.8"
+GRADLE_USER_HOME="${GRADLE_USER_HOME:-${HOME}/.gradle}"
+DIST_DIR="${GRADLE_USER_HOME}/wrapper/dists/gradle-${GRADLE_VERSION}-bin/gradle-${GRADLE_VERSION}-bin"
+GRADLE_CMD="${DIST_DIR}/gradle-${GRADLE_VERSION}/bin/gradle"
+
+if [ ! -f "${GRADLE_CMD}" ]; then
+  echo "Downloading Gradle ${GRADLE_VERSION}..." >&2
+  mkdir -p "${DIST_DIR}"
+  TMPZIP="${DIST_DIR}/gradle.zip"
+  if command -v curl >/dev/null 2>&1; then
+    curl -sSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o "${TMPZIP}"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -O "${TMPZIP}"
+  else
+    echo "ERROR: Neither curl nor wget found. Install one to download Gradle." >&2
+    exit 1
+  fi
+  unzip -qo "${TMPZIP}" -d "${DIST_DIR}"
+  rm -f "${TMPZIP}"
+  echo "Gradle ${GRADLE_VERSION} ready." >&2
+fi
+
+exec "${GRADLE_CMD}" "$@"
