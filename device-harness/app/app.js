@@ -3,16 +3,19 @@
  *
  * The on-device test app controller.
  *
- *  1. Detects device metadata.
- *  2. Connects to the external manager over WebSocket and registers itself,
- *     advertising its scenario catalogue.
- *  3. Waits for `run` / `run_all` commands from the manager and executes the
- *     matching scenario runner on THIS device, streaming events and the final
- *     result back.
+ *  1. Detects device metadata + the app identity (so the manager can list which
+ *     devices AND apps can be tested).
+ *  2. Connects to the MQTT **message broker** (mqtt.js over WebSocket) and
+ *     announces itself with a retained `status` message and a Last-Will so the
+ *     manager sees it go offline if the connection drops. No direct link between
+ *     the manager and this device is required — both are broker clients.
+ *  3. Subscribes to its own command topic and runs `run` / `run_all` commands,
+ *     streaming a live debug/trace event for every SDK event plus the final
+ *     result back over the broker.
  *  4. Also exposes a local UI so the app can be driven manually on the device.
  *
- * The manager WebSocket URL is taken from the `?manager=` query parameter, or
- * defaults to the same host that served this page (path `/ws`).
+ * The broker URL is taken from the `?broker=` query parameter, or defaults to
+ * MQTT-over-WebSocket on the same host that served this page (path `/mqtt`).
  */
 
 (function () {
@@ -20,6 +23,18 @@
 
   var Catalogue = window.AdSdkCatalogue;
   var Scenarios = window.AdSdkScenarios;
+  var Topics = window.AdSdkTopics;
+  var mqtt = window.mqtt;
+
+  // ---- App identity ---------------------------------------------------------
+  var backend = window.AdSdkAdapter.create(window).backend;
+  var APP = {
+    id: 'adsdk-harness',
+    name: 'Ads SDK Reference Harness',
+    version: '1.0.0',
+    sdk: backend,
+    scenarioCount: Catalogue.SCENARIOS.length,
+  };
 
   // ---- Device identity ------------------------------------------------------
   function uuid() {
@@ -116,9 +131,18 @@
 
   function runScenario(id, runId) {
     setRow(id, 'running');
-    return Scenarios.run(id, { global: window, viewport: viewportHook }).then(function (result) {
+    publishEvent(runId, id, { kind: 'scenario_start' });
+    var env = {
+      global: window,
+      viewport: viewportHook,
+      onEvent: function (e) {
+        publishEvent(runId, id, { kind: 'sdk_event', name: e.name, data: e.data === undefined ? null : e.data });
+      },
+    };
+    return Scenarios.run(id, env).then(function (result) {
       setRow(id, result.status, result);
-      send({ type: 'result', runId: runId, deviceId: device.id, scenarioId: id, result: result });
+      publishEvent(runId, id, { kind: 'scenario_end', status: result.status });
+      publish(Topics.result(device.id), { type: 'result', runId: runId, deviceId: device.id, scenarioId: id, result: result });
       return result;
     });
   }
@@ -129,7 +153,7 @@
     var results = [];
     function next() {
       if (i >= ids.length) {
-        send({ type: 'run_all_complete', runId: runId, deviceId: device.id, results: results });
+        publish(Topics.runComplete(device.id), { type: 'run_all_complete', runId: runId, deviceId: device.id, results: results });
         return Promise.resolve(results);
       }
       return runScenario(ids[i++], runId).then(function (r) { results.push(r); return next(); });
@@ -137,15 +161,15 @@
     return next();
   }
 
-  // ---- Manager WebSocket ----------------------------------------------------
-  var ws = null;
+  // ---- Message broker (MQTT) ------------------------------------------------
+  var client = null;
 
-  function defaultManagerUrl() {
-    var q = new URLSearchParams(location.search).get('manager');
+  function defaultBrokerUrl() {
+    var q = new URLSearchParams(location.search).get('broker');
     if (q) return q;
     var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    if (location.host) return proto + '//' + location.host + '/ws';
-    return 'ws://localhost:8090/ws';
+    if (location.host) return proto + '//' + location.host + '/mqtt';
+    return 'ws://localhost:8090/mqtt';
   }
 
   function setConn(on) {
@@ -154,59 +178,75 @@
     el.className = 'pill ' + (on ? 'on' : 'off');
   }
 
-  function send(obj) {
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
+  function publish(topic, obj, opts) {
+    if (client && client.connected) client.publish(topic, JSON.stringify(obj), opts || {});
+  }
+
+  function publishEvent(runId, scenarioId, ev) {
+    if (!runId) return; // manual runs are not tied to a manager run
+    publish(Topics.event(device.id), Object.assign({ runId: runId, scenarioId: scenarioId }, ev));
+  }
+
+  function statusPayload(status) {
+    return {
+      status: status,
+      device: device,
+      app: APP,
+      scenarios: Catalogue.SCENARIOS.map(function (s) {
+        return { id: s.id, title: s.title, category: s.category };
+      }),
+    };
   }
 
   function connect(url) {
-    try { if (ws) ws.close(); } catch (e) {}
+    try { if (client) client.end(true); } catch (e) {}
+    var statusTopic = Topics.status(device.id);
     try {
-      ws = new WebSocket(url + (url.indexOf('?') === -1 ? '?role=device' : '&role=device'));
+      client = mqtt.connect(url, {
+        clientId: 'adsdk-device-' + device.id,
+        clean: true,
+        reconnectPeriod: 3000,
+        will: { topic: statusTopic, payload: JSON.stringify({ status: 'offline' }), retain: true, qos: 1 },
+      });
     } catch (e) {
       setConn(false);
       return;
     }
-    ws.onopen = function () {
+    client.on('connect', function () {
       setConn(true);
-      send({
-        type: 'register',
-        device: device,
-        scenarios: Catalogue.SCENARIOS.map(function (s) {
-          return { id: s.id, title: s.title, category: s.category };
-        }),
-      });
-    };
-    ws.onclose = function () { setConn(false); setTimeout(function () {
-      if ($('manager-url').dataset.auto === '1') connect($('manager-url').value);
-    }, 3000); };
-    ws.onerror = function () { setConn(false); };
-    ws.onmessage = function (ev) {
+      // Retained status so a manager connecting later still discovers us…
+      publish(statusTopic, statusPayload('online'), { retain: true, qos: 1 });
+      // …and an explicit register for managers already listening.
+      publish(Topics.register, statusPayload('online'), { qos: 1 });
+      client.subscribe(Topics.cmd(device.id), { qos: 1 });
+    });
+    client.on('reconnect', function () { setConn(false); });
+    client.on('close', function () { setConn(false); });
+    client.on('error', function () { setConn(false); });
+    client.on('message', function (topic, buf) {
       var msg;
-      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      try { msg = JSON.parse(buf.toString()); } catch (e) { return; }
       if (msg.type === 'run') runScenario(msg.scenarioId, msg.runId);
       else if (msg.type === 'run_all') runAll(msg.runId);
-      else if (msg.type === 'ping') send({ type: 'pong', deviceId: device.id });
-    };
+    });
   }
 
   // ---- Wire up UI -----------------------------------------------------------
   buildRows();
-  $('backend').textContent = 'sdk: ' + window.AdSdkAdapter.create(window).backend;
+  $('backend').textContent = 'sdk: ' + backend;
   $('backend').className = 'pill on';
-  $('manager-url').value = defaultManagerUrl();
+  $('manager-url').value = defaultBrokerUrl();
 
   $('connect-btn').addEventListener('click', function () {
-    $('manager-url').dataset.auto = '1';
     connect($('manager-url').value);
   });
   $('run-all-btn').addEventListener('click', function () { runAll(null); });
 
-  // Auto-connect if a manager was supplied via query string.
-  if (new URLSearchParams(location.search).get('manager') || location.host) {
-    $('manager-url').dataset.auto = '1';
+  // Auto-connect if a broker was supplied via query string or via same-origin.
+  if (mqtt && (new URLSearchParams(location.search).get('broker') || location.host)) {
     connect($('manager-url').value);
   }
 
   // Expose for debugging / automation.
-  window.__adsdkHarness = { device: device, runScenario: runScenario, runAll: runAll };
+  window.__adsdkHarness = { device: device, app: APP, runScenario: runScenario, runAll: runAll };
 })();

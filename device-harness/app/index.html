@@ -47,7 +47,7 @@
 
 <main>
   <div class="toolbar">
-    <label>Manager&nbsp;<input id="manager-url" size="34" placeholder="ws://host:8090/ws" /></label>
+    <label>Broker&nbsp;<input id="manager-url" size="34" placeholder="ws://host:8090/mqtt" /></label>
     <button id="connect-btn" class="secondary">Connect</button>
     <button id="run-all-btn">Run all scenarios</button>
   </div>
@@ -63,7 +63,9 @@
 </main>
 
 <!-- Optional: load the real Ads SDK before these to test it instead of the reference impl. -->
+<script src="/vendor/mqtt.min.js"></script>
 <script src="../shared/catalogue.js"></script>
+<script src="../shared/topics.js"></script>
 <script src="./sdk-adapter.js"></script>
 <script src="./scenarios.js"></script>
 <script src="./app.js"></script>

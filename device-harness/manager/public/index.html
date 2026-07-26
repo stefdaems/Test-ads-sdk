@@ -11,6 +11,7 @@
     header h1 { margin: 0; font-size: 18px; }
     main { padding: 16px 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
     section { background: #11161d; border: 1px solid #1c232c; border-radius: 8px; padding: 12px 14px; }
+    section.wide { grid-column: 1 / -1; }
     h2 { font-size: 14px; margin: 0 0 10px; color: #8b98a5; text-transform: uppercase; letter-spacing: .05em; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #1c232c; vertical-align: top; }
@@ -19,21 +20,33 @@
     select { background: #0d1117; border: 1px solid #30363d; color: #e6edf3; padding: 5px 8px; border-radius: 6px; }
     .st.passed { color: #46d16f; } .st.failed { color: #ff6b6b; }
     .st.running, .st.dispatched { color: #d1a546; } .st.completed { color: #46d16f; }
+    .st.idle { color: #8b98a5; } .st.offline { color: #ff6b6b; }
     .muted { color: #8b98a5; font-size: 12px; }
     code { color: #9fb0c0; }
     pre { white-space: pre-wrap; font-size: 11px; color: #9fb0c0; max-height: 260px; overflow: auto; }
+    #debug { font-family: ui-monospace, monospace; font-size: 11px; max-height: 220px; overflow: auto; background: #0d1117; border: 1px solid #1c232c; border-radius: 6px; padding: 8px; }
+    #debug .row { padding: 1px 0; }
+    #debug .k-sdk_event { color: #9fb0c0; }
+    #debug .k-scenario_start { color: #1f6feb; }
+    #debug .k-scenario_end { color: #46d16f; }
   </style>
 </head>
 <body>
 <header>
   <h1>Ads SDK — External Device Manager</h1>
-  <div class="muted">Instruct connected devices to run on-device ad test scenarios and collect results.</div>
+  <div class="muted">Devices &amp; apps connect over an MQTT message broker. Instruct any device to run on-device ad test scenarios and follow runs live.</div>
 </header>
 <main>
   <section>
     <h2>Connected devices</h2>
-    <table><thead><tr><th>Device</th><th>Platform</th><th>Status</th><th>Run</th></tr></thead>
+    <table><thead><tr><th>Device</th><th>App</th><th>Status</th><th>Run</th></tr></thead>
       <tbody id="devices"><tr><td colspan="4" class="muted">No devices connected. Open <code>/app</code> on a device.</td></tr></tbody>
+    </table>
+  </section>
+  <section>
+    <h2>Apps under test</h2>
+    <table><thead><tr><th>App</th><th>SDK</th><th>Scenarios</th><th>Devices</th></tr></thead>
+      <tbody id="apps"><tr><td colspan="4" class="muted">No apps registered yet.</td></tr></tbody>
     </table>
   </section>
   <section>
@@ -43,6 +56,11 @@
     </table>
     <div id="detail"></div>
   </section>
+  <section>
+    <h2>Live debug follow-up</h2>
+    <div class="muted" id="debug-run">Select a run to follow, or watch the latest.</div>
+    <div id="debug"></div>
+  </section>
 </main>
 
 <script>
@@ -50,6 +68,7 @@
   'use strict';
   var scenarios = [];
   var runsById = {};
+  var followRunId = null;
 
   function esc(v) {
     return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
@@ -71,10 +90,11 @@
     tb.innerHTML = '';
     list.forEach(function (d) {
       var opts = scenarios.map(function (s) { return '<option value="' + esc(s.id) + '">' + esc(s.title) + '</option>'; }).join('');
+      var appName = d.app ? d.app.name : '—';
       var tr = document.createElement('tr');
       tr.innerHTML =
-        '<td><code>' + esc(d.id.slice(0, 8)) + '</code><div class="muted">' + esc(d.model) + '</div></td>' +
-        '<td>' + esc(d.platform) + '<div class="muted">' + esc(d.make) + '</div></td>' +
+        '<td><code>' + esc(d.id.slice(0, 8)) + '</code><div class="muted">' + esc(d.platform) + ' · ' + esc(d.model) + '</div></td>' +
+        '<td>' + esc(appName) + '<div class="muted">' + esc(d.app ? d.app.sdk : '') + '</div></td>' +
         '<td class="st ' + esc(d.status) + '">' + esc(d.status) + '</td>' +
         '<td><select data-sel>' + opts + '</select> ' +
           '<button data-run>Run</button> <button class="secondary" data-all>All</button></td>';
@@ -89,7 +109,23 @@
     });
   }
 
+  function renderApps(list) {
+    var tb = document.getElementById('apps');
+    if (!list.length) { tb.innerHTML = '<tr><td colspan="4" class="muted">No apps registered yet.</td></tr>'; return; }
+    tb.innerHTML = '';
+    list.forEach(function (a) {
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + esc(a.name) + '<div class="muted">' + esc(a.id) + ' v' + esc(a.version) + '</div></td>' +
+        '<td>' + esc(a.sdk) + '</td>' +
+        '<td>' + esc(a.scenarioCount) + '</td>' +
+        '<td>' + esc(a.deviceCount) + '</td>';
+      tb.appendChild(tr);
+    });
+  }
+
   function refreshDevices() { api('/api/devices').then(function (d) { renderDevices(d.devices || []); }); }
+  function refreshApps() { api('/api/apps').then(function (d) { renderApps(d.apps || []); }); }
 
   function renderRuns() {
     var tb = document.getElementById('runs');
@@ -105,7 +141,7 @@
         '<td>' + esc(r.scenarioId || 'ALL') + '</td>' +
         '<td class="st ' + esc(r.status) + '">' + esc(r.status) + ' (' + passed + '/' + r.results.length + ')</td>';
       tr.style.cursor = 'pointer';
-      tr.addEventListener('click', function () { showDetail(r); });
+      tr.addEventListener('click', function () { showDetail(r); follow(r.runId); });
       tb.appendChild(tr);
     });
   }
@@ -117,14 +153,38 @@
 
   function upsertRun(run) { runsById[run.runId] = run; renderRuns(); }
 
+  // ---- Live debug follow-up ----
+  function follow(runId) {
+    followRunId = runId;
+    document.getElementById('debug-run').textContent = 'Following run ' + runId.slice(0, 8);
+    document.getElementById('debug').innerHTML = '';
+    api('/api/runs/' + encodeURIComponent(runId) + '/debug').then(function (d) {
+      (d.debug || []).forEach(appendDebug);
+    });
+  }
+
+  function appendDebug(ev) {
+    var box = document.getElementById('debug');
+    var line = document.createElement('div');
+    var label = ev.kind === 'sdk_event' ? ('· ' + (ev.name || ''))
+      : ev.kind === 'scenario_start' ? ('▶ start ' + (ev.scenarioId || ''))
+      : ev.kind === 'scenario_end' ? ('■ end ' + (ev.scenarioId || '') + ' [' + (ev.status || '') + ']')
+      : ('· ' + (ev.name || ev.kind));
+    line.className = 'row k-' + esc(ev.kind);
+    line.textContent = (ev.ts ? ev.ts.slice(11, 23) : '') + '  ' + label;
+    box.appendChild(line);
+    box.scrollTop = box.scrollHeight;
+  }
+
   function connectWs() {
     var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    var ws = new WebSocket(proto + '//' + location.host + '/ws?role=operator');
+    var ws = new WebSocket(proto + '//' + location.host + '/ws');
     ws.onmessage = function (ev) {
       var msg = JSON.parse(ev.data);
-      if (msg.type === 'snapshot') { renderDevices(msg.devices || []); }
-      else if (msg.type === 'device_connected' || msg.type === 'device_disconnected') { refreshDevices(); }
-      else if (msg.type === 'run_created') { upsertRun(msg.run); refreshDevices(); }
+      if (msg.type === 'snapshot') { renderDevices(msg.devices || []); renderApps(msg.apps || []); }
+      else if (msg.type === 'device_connected' || msg.type === 'device_disconnected' || msg.type === 'device_updated') { refreshDevices(); refreshApps(); }
+      else if (msg.type === 'run_created') { upsertRun(msg.run); refreshDevices(); if (!followRunId || msg.run.status === 'dispatched') follow(msg.run.runId); }
+      else if (msg.type === 'debug') { if (msg.runId === followRunId) appendDebug(msg.event); }
       else if (msg.type === 'result' || msg.type === 'run_all_complete') {
         api('/api/runs/' + encodeURIComponent(msg.runId)).then(function (run) { if (run && run.runId) upsertRun(run); });
         refreshDevices();
@@ -133,7 +193,7 @@
     ws.onclose = function () { setTimeout(connectWs, 2000); };
   }
 
-  loadScenarios().then(function () { refreshDevices(); connectWs(); });
+  loadScenarios().then(function () { refreshDevices(); refreshApps(); connectWs(); });
 })();
 </script>
 </body>

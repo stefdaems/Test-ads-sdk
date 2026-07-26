@@ -32,11 +32,18 @@
     return this.assertions.every(function (a) { return a.ok; });
   };
 
-  // Build a fresh SDK + event recorder for each run.
-  function newContext(globalObj) {
+  // Build a fresh SDK + event recorder for each run. `onEvent`, when supplied,
+  // is invoked for every SDK event as it happens so callers can stream a live
+  // debug/trace of the run (used to follow tests running on a device).
+  function newContext(globalObj, onEvent) {
     var sdk = AdSdkAdapter.create(globalObj);
     var events = [];
-    sdk.on(function (e) { events.push(e); });
+    sdk.on(function (e) {
+      events.push(e);
+      if (typeof onEvent === 'function') {
+        try { onEvent(e); } catch (err) { /* never let tracing break a run */ }
+      }
+    });
     return { sdk: sdk, events: events };
   }
 
@@ -405,7 +412,7 @@
         id: id, status: 'failed', assertions: [{ name: 'scenario exists', ok: false, detail: 'unknown id' }], events: [],
       });
     }
-    var ctx = newContext(env.global);
+    var ctx = newContext(env.global, env.onEvent);
     if (env.viewport) ctx.viewport = env.viewport;
     var started = Date.now();
     return Promise.resolve()

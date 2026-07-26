@@ -4,19 +4,50 @@ An **on-device test application** plus an **external manager** that lets you dri
 Ads SDK test scenarios on real devices (Samsung/Tizen, Vizio, Android TV, LG webOS,
 mobile, desktop) from a central place.
 
+Devices and the manager communicate through an **MQTT message broker** — they are
+never required to hold a direct link to each other:
+
 ```
-                 REST API / dashboard                WebSocket
- External system  ───────────────►  Manager (Node)  ◄──────────►  Device app
- (CI, operator)                     server.js                     (browser on TV)
+                                   ┌───────────────────────┐
+  External system  ── REST ─────►  │        Manager        │
+  (CI, operator, dashboard)        │  (broker client)      │
+                                   └───────────┬───────────┘
+                                               │ MQTT (pub/sub)
+                                     ┌──────────┴──────────┐
+                                     │    Message broker   │  ◄─ embedded (aedes)
+                                     │  MQTT over TCP / WS │     or external MQTT_URL
+                                     └──────────┬──────────┘
+                                               │ MQTT (pub/sub)
+                     ┌─────────────────────────┼─────────────────────────┐
+              ┌──────┴──────┐            ┌──────┴──────┐            ┌──────┴──────┐
+              │  Device app │            │  Device app │            │  Device app │
+              │ (TV browser)│            │ (mobile)    │            │ (desktop)   │
+              └─────────────┘            └─────────────┘            └─────────────┘
 ```
 
-* The **device** opens a single URL (`/app`) in its browser. It registers itself
-  with the manager over WebSocket and waits for commands.
-* The **manager** keeps a live registry of connected devices, exposes a REST API,
-  and serves an operator dashboard.
+* Each **device** opens a single URL (`/app`) in its browser. It connects **out**
+  to the broker (MQTT over WebSocket), announces itself with a retained status
+  message + Last-Will, and subscribes to its own command topic.
+* The **manager** is also just a broker client. It keeps a live overview of which
+  **devices** are connected and which **apps** can be tested, dispatches commands
+  by publishing to a device's topic, and collects live debug/trace events + results.
 * An **external system** (or a human using the dashboard) tells the manager to run
-  a specific scenario — or the whole suite — on a specific device. Results stream
-  back and are queryable over REST.
+  a scenario — or the whole suite — on a specific device over REST. The manager
+  relays it through the broker, so the external system never needs a direct link
+  to the device.
+
+## Why a message broker?
+
+A direct manager→device connection cannot be guaranteed: real TVs and mobiles sit
+behind NAT, on isolated “device VLANs”, or on captive networks where inbound
+connections are impossible. With a broker, **every party only makes an outbound
+connection**, so devices remain reachable regardless of network topology. It also
+gives natural presence detection (retained status + Last-Will), fan-out to multiple
+operators, and buffering.
+
+By default the manager starts an **embedded** broker (aedes) so the whole system
+runs with a single `npm start`. To use a shared/cloud broker instead, set
+`MQTT_URL` (see below) — the manager and every device then connect to that broker.
 
 ## Why a browser app?
 
@@ -34,13 +65,15 @@ calls to the real SDK.
 | Path | Purpose |
 |------|---------|
 | `shared/catalogue.js` | Single source of truth for all test scenarios (id, title, category). Loaded by both the app and the manager. |
+| `shared/topics.js` | Canonical MQTT topic scheme shared by the app and the manager. |
 | `app/index.html` | The on-device test app UI. |
-| `app/app.js` | Device controller: detects the device, connects to the manager, runs commands, streams results. |
+| `app/app.js` | Device controller: detects the device + app identity, connects to the broker, runs commands, streams debug events + results. |
 | `app/sdk-adapter.js` | Swappable SDK adapter — reference implementation by default, real SDK when present. |
-| `app/scenarios.js` | Executable runner for each catalogue scenario (also runnable under Node). |
-| `manager/server.js` | External manager: static serving, REST API, device/operator WebSockets. |
-| `manager/public/index.html` | Operator dashboard. |
-| `scripts/smoke-test.js` | End-to-end check (boots the manager, connects a simulated device, drives the REST API). |
+| `app/scenarios.js` | Executable runner for each catalogue scenario (also runnable under Node); streams live events via an `onEvent` hook. |
+| `manager/broker.js` | Embedded MQTT broker (aedes) — MQTT over TCP + MQTT over WebSocket. |
+| `manager/server.js` | External manager: static serving, REST API, broker client, device/app registry, debug + result collection. |
+| `manager/public/index.html` | Operator dashboard (devices, apps, runs, live debug follow-up). |
+| `scripts/smoke-test.js` | End-to-end check (boots the manager + broker, connects a simulated MQTT device, drives the REST API). |
 
 ## Scenario coverage
 
@@ -61,26 +94,51 @@ Scenarios span the SDK's use-cases (see `shared/catalogue.js` for the full list)
 ```bash
 cd device-harness
 npm install
-npm start            # listens on 0.0.0.0:8090 (override with PORT / HOST)
+npm start            # HTTP on 0.0.0.0:8090, embedded MQTT broker on :1883 (+ ws:/mqtt)
 ```
 
 Then:
 
 * Operator dashboard: `http://<manager-host>:8090/`
-* On-device app URL:   `http://<manager-host>:8090/app?manager=ws://<manager-host>:8090/ws`
+* On-device app URL:   `http://<manager-host>:8090/app`
 
-Open the app URL in the browser of each device you want to test. The device shows
-up in the dashboard within a second.
+Open the app URL in the browser of each device you want to test. The device
+connects to the broker and shows up in the dashboard within a second.
 
-> The app also accepts the manager URL typed into its on-screen field, so you can
-> point a device at the manager without query params.
+By default the app connects to the broker over MQTT-over-WebSocket at
+`ws://<same-host>:8090/mqtt`. To point a device at a different broker, either pass
+`?broker=ws://<broker-host>:<port>/mqtt` on the app URL or type it into the app's
+on-screen field.
+
+### Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `8090` | HTTP port (dashboard, app, REST API, MQTT-over-WS `/mqtt`). |
+| `HOST` | `0.0.0.0` | Bind address. |
+| `MQTT_PORT` | `1883` | TCP port for the embedded broker (native/Node MQTT clients). |
+| `MQTT_URL` | – | If set, skip the embedded broker and connect to this external broker instead (e.g. `mqtt://broker.example:1883`). |
+
+## Message broker topics
+
+Prefix defaults to `adsdk` (see `shared/topics.js`):
+
+| Topic | Direction | Purpose |
+|-------|-----------|---------|
+| `adsdk/register` | device → broker | Announce presence (app + device + scenarios). |
+| `adsdk/devices/<id>/status` | device → broker | Retained online/offline status (+ Last-Will). |
+| `adsdk/devices/<id>/cmd` | manager → device | `run` / `run_all` commands. |
+| `adsdk/devices/<id>/event` | device → broker | Live debug/trace events during a run. |
+| `adsdk/devices/<id>/result` | device → broker | Per-scenario result. |
+| `adsdk/devices/<id>/run-complete` | device → broker | `run_all` finished. |
 
 ## Instructing a device from an external system
 
-List connected devices:
+List connected devices and the apps under test:
 
 ```bash
 curl http://<manager-host>:8090/api/devices
+curl http://<manager-host>:8090/api/apps
 ```
 
 Run a single scenario on a device:
@@ -98,10 +156,11 @@ Run the whole suite on a device:
 curl -X POST http://<manager-host>:8090/api/devices/<deviceId>/run-all
 ```
 
-Poll for results:
+Follow a run live (debug/trace) and read results:
 
 ```bash
-curl http://<manager-host>:8090/api/runs/<runId>
+curl http://<manager-host>:8090/api/runs/<runId>/debug   # live trace events
+curl http://<manager-host>:8090/api/runs/<runId>         # status + results + debug
 ```
 
 A completed run looks like:
@@ -120,6 +179,10 @@ A completed run looks like:
       "assertions": [{ "name": "impression fired once", "ok": true }],
       "events": ["ad_break_started", "ad_started", "…"]
     }
+  ],
+  "debug": [
+    { "ts": "…", "kind": "scenario_start", "scenarioId": "preroll" },
+    { "ts": "…", "kind": "sdk_event", "name": "ad_started", "scenarioId": "preroll" }
   ]
 }
 ```
@@ -128,13 +191,15 @@ A completed run looks like:
 
 | Method | Path | Body | Description |
 |--------|------|------|-------------|
-| GET  | `/api/health` | – | Liveness. |
-| GET  | `/api/devices` | – | Connected devices + status. |
+| GET  | `/api/health` | – | Liveness + broker info. |
+| GET  | `/api/devices` | – | Connected devices + status + app. |
+| GET  | `/api/apps` | – | Apps that can be tested and on how many devices. |
 | GET  | `/api/scenarios` | – | Full scenario catalogue. |
 | POST | `/api/devices/:deviceId/run` | `{ "scenarioId": "…" }` | Run one scenario on a device. Returns `{ runId }`. |
 | POST | `/api/devices/:deviceId/run-all` | – | Run the whole suite on a device. Returns `{ runId }`. |
 | GET  | `/api/runs` | – | Recent runs. |
-| GET  | `/api/runs/:runId` | – | Run status + results. |
+| GET  | `/api/runs/:runId` | – | Run status + results + debug log. |
+| GET  | `/api/runs/:runId/debug` | – | Live debug/trace log for a run. |
 
 ## Validating the harness
 
@@ -143,10 +208,11 @@ cd device-harness
 npm run smoke
 ```
 
-This boots the manager, connects a simulated device that runs the real scenario
-code against the reference SDK, and drives the REST API exactly like an external
-system would, asserting every scenario passes. It exits non-zero on any failure,
-so it is CI-friendly.
+This boots the manager + embedded broker, connects a simulated **MQTT** device that
+runs the real scenario code against the reference SDK, and drives the REST API
+exactly like an external system would — asserting every scenario passes, that the
+app is discovered, and that live debug follow-up is captured. It exits non-zero on
+any failure, so it is CI-friendly.
 
 ## Plugging in the real Ads SDK
 
