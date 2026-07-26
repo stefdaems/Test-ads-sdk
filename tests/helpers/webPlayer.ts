@@ -170,9 +170,15 @@ export async function waitForAdContainerGone(page: Page, timeout = 10_000): Prom
   await page.locator('#ad-container').waitFor({ state: 'detached', timeout });
 }
 
-/** Returns true when `#ad-container` is visible and within the viewport. */
 export async function isAdInViewport(page: Page): Promise<boolean> {
-  return page.locator('#ad-container').isVisible();
+  const locator = page.locator('#ad-container');
+  if (!(await locator.isVisible())) return false;
+  return locator.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const vw = window.innerWidth || document.documentElement.clientWidth;
+    const vh = window.innerHeight || document.documentElement.clientHeight;
+    return r.bottom > 0 && r.right > 0 && r.top < vh && r.left < vw;
+  });
 }
 
 /** Clicks the skip button once it appears. */
