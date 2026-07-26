@@ -148,7 +148,7 @@ export async function createDriver(): Promise<Browser<'async'>> {
   };
 
   if (IS_TVLABS) {
-    options.headers = { Authorization: `****** };
+    options.headers = { Authorization: ['Bearer', TVLABS_API_KEY].join(' ' ) };
   }
 
   if (IS_BROWSERSTACK) {
