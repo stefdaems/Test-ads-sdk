@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>THEOplayer — Ads SDK Test Harness (Vizio — Bad)</title>
+  <script src="https://ads-sdk.xnappet.live/sdk/ads-sdk.js" async></script>
+  <style>
+    #diagnostic-log { white-space: pre-wrap; font-size: 11px; background: #111;
+                      color: #0f0; padding: 8px; margin: 10px; }
+  </style>
+</head>
+<body>
+<pre id="diagnostic-log">Bad host initialising…</pre>
+<script>
+(function () {
+  var log = document.getElementById('diagnostic-log');
+  function diag(msg) { log.textContent += '\n' + msg; }
+
+  window.addEventListener('AdsSDKReady', function () {
+    try {
+      // Intentionally pass null / empty publisher ID — SDK must reject gracefully.
+      AdsSDK.init({ publisherId: null, playerType: 'theoplayer', debug: true });
+      diag('unexpected_success');
+    } catch (err) {
+      diag('invalid_publisher_id');
+      diag('error:' + err.message);
+    }
+  });
+
+  diag('page_loaded');
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Ads SDK Test — Theoplayer</string>
+    <string name="load_content">Load Content</string>
+    <string name="skip_ad">Skip Ad</string>
+</resources>
