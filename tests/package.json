@@ -1,0 +1,31 @@
+{
+  "name": "ad-sdk-device-tests",
+  "version": "1.0.0",
+  "description": "TypeScript/Jest + Appium + Playwright cross-platform tests for the Ads SDK device lab",
+  "scripts": {
+    "test":              "jest",
+    "test:consent":      "jest --testPathPattern=consent/",
+    "test:network":      "jest --testPathPattern=network/",
+    "test:viewability":  "jest --testPathPattern=viewability/",
+    "test:memory":       "jest --testPathPattern=memory/",
+    "test:players":      "jest --testPathPattern=players/",
+    "test:theoplayer":   "jest --testPathPattern=players/theoplayer/",
+    "test:shaka":        "jest --testPathPattern=players/shaka/",
+    "test:videojs":      "jest --testPathPattern=players/videojs/",
+    "test:exoplayer":    "jest --testPathPattern=players/exoplayer/",
+    "test:bitmovin":     "jest --testPathPattern=players/bitmovin/",
+    "test:web-players":  "jest --testPathPattern=players/.*-web\\.spec\\.ts",
+    "test:native":       "jest --testPathPattern=players/.*(android|ios)\\.spec\\.ts",
+    "playwright:install": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0",
+    "jest": "^29.5.0",
+    "playwright": "^1.44.0",
+    "ts-node": "^10.9.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.4.0",
+    "webdriverio": "^8.0.0"
+  }
+}

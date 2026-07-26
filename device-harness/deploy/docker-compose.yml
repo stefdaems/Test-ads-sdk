@@ -1,0 +1,40 @@
+# docker-compose for local, single-host cluster-like deployment of the harness.
+#
+#   cd device-harness
+#   docker compose -f deploy/docker-compose.yml up --build
+#
+# `builder` runs once to publish the app into the shared `artifacts` volume, then
+# `manager` serves the dashboard/app/REST API + MQTT broker using that same volume.
+services:
+  builder:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: adsdk-device-harness:latest
+    command: ["node", "scripts/build-app.js"]
+    environment:
+      ARTIFACTS_DIR: /artifacts
+    volumes:
+      - artifacts:/artifacts
+
+  manager:
+    image: adsdk-device-harness:latest
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+    environment:
+      ARTIFACTS_DIR: /artifacts
+      HOST: 0.0.0.0
+      PORT: "8090"
+      MQTT_PORT: "1883"
+      # Externally reachable base URL devices use to download builds; override for
+      # your host, e.g. http://manager.example.com:8090
+      PUBLIC_URL: http://localhost:8090
+    ports:
+      - "8090:8090"   # dashboard, app, REST API, MQTT-over-WebSocket (/mqtt)
+      - "1883:1883"   # MQTT over TCP (native devices)
+    volumes:
+      - artifacts:/artifacts
+
+volumes:
+  artifacts:

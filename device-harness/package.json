@@ -1,0 +1,19 @@
+{
+  "name": "adsdk-device-harness",
+  "version": "1.0.0",
+  "description": "On-device Ads SDK test app + external manager (over an MQTT message broker) for remotely instructing devices to run test scenarios",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node manager/server.js",
+    "build": "node scripts/build-app.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "dependencies": {
+    "aedes": "^1.1.1",
+    "mqtt": "^5.15.2",
+    "ws": "^8.21.0"
+  }
+}

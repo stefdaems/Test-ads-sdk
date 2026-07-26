@@ -1,0 +1,35 @@
+# One-off Job that builds the on-device app and publishes it into the SHARED
+# artifacts volume. Re-run (or use a Helm/Argo hook) whenever the app changes:
+#
+#   kubectl -n adsdk-harness delete job adsdk-build --ignore-not-found
+#   kubectl -n adsdk-harness apply -f deploy/k8s/20-build-job.yaml
+#
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: adsdk-build
+  namespace: adsdk-harness
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: adsdk-harness
+        role: build
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: build
+          image: adsdk-device-harness:latest
+          imagePullPolicy: IfNotPresent
+          command: ["node", "scripts/build-app.js"]
+          env:
+            - name: ARTIFACTS_DIR
+              value: /artifacts
+          volumeMounts:
+            - name: artifacts
+              mountPath: /artifacts
+      volumes:
+        - name: artifacts
+          persistentVolumeClaim:
+            claimName: adsdk-artifacts

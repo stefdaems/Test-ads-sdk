@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Video.js — Ads SDK Test Harness</title>
+
+  <!-- Video.js -->
+  <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
+  <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+
+  <!-- Ads SDK -->
+  <script src="https://ads-sdk.xnappet.live/sdk/ads-sdk.js" async></script>
+
+  <style>
+    body { margin: 0; background: #000; font-family: sans-serif; }
+    #player-wrapper   { position: relative; width: 640px; height: 360px; margin: 20px auto; }
+    #ad-container     { position: absolute; inset: 0; z-index: 10; pointer-events: none; }
+    #ad-container.active { pointer-events: all; }
+    #overlay-container { position: absolute; inset: 0; z-index: 9; pointer-events: none; }
+    #companion-slot   { width: 300px; height: 250px; margin: 10px auto; border: 1px dashed #555; }
+    #skip-btn         { display: none; position: absolute; bottom: 10px; right: 10px;
+                        z-index: 20; padding: 6px 14px; background: rgba(0,0,0,.7);
+                        color: #fff; border: 1px solid #fff; cursor: pointer; }
+    #controls         { text-align: center; margin: 10px; }
+    #controls button  { margin: 4px; padding: 8px 16px; }
+    #diagnostic-log   { white-space: pre-wrap; font-size: 11px; background: #111;
+                        color: #0f0; padding: 8px; max-height: 200px; overflow-y: auto;
+                        margin: 10px auto; width: 640px; }
+  </style>
+</head>
+<body>
+
+<div id="player-wrapper">
+  <video id="player" class="video-js vjs-default-skin" controls preload="auto"
+         width="640" height="360">
+    <source src="https://cdn.theoplayer.com/video/elephants-dream/playlist.m3u8"
+            type="application/x-mpegURL" />
+  </video>
+  <div id="ad-container"></div>
+  <div id="overlay-container"></div>
+  <button id="skip-btn">Skip Ad ›</button>
+</div>
+
+<div id="companion-slot"></div>
+
+<div id="controls">
+  <button id="load-content-btn">Load Content</button>
+  <button id="load-video-ad-btn">Load Video Ad</button>
+  <button id="load-ad-btn">Load Display Ad</button>
+</div>
+
+<pre id="diagnostic-log">Initialising…</pre>
+
+<script>
+(function () {
+  'use strict';
+
+  var log = document.getElementById('diagnostic-log');
+  function diag(msg) {
+    log.textContent += '\n' + new Date().toISOString() + ' ' + msg;
+    log.scrollTop = log.scrollHeight;
+  }
+
+  var vjsPlayer = videojs('player', { autoplay: false, muted: true });
+
+  var DEFAULT_VAST = 'https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/single_ad_samples&sz=640x480&cust_params=sample_ct%3Dlinear&output=vast&unviewed_position_start=1&env=vp&impl=s&correlator=' + Date.now();
+  var vastTag = DEFAULT_VAST;
+
+  window.addEventListener('AdsSDKReady', function () {
+    try {
+      AdsSDK.init({
+        publisherId: 'TEST_PID',
+        player: vjsPlayer,
+        playerType: 'videojs',
+        debug: true,
+        consentString: 'PLACEHOLDER_TCF_STRING',
+        adContainer: document.getElementById('ad-container'),
+        skipButton: document.getElementById('skip-btn'),
+        companionSlot: document.getElementById('companion-slot'),
+        onEvent: function (name, detail) {
+          diag('event:' + name);
+          window.dispatchEvent(new CustomEvent(name, { detail: detail }));
+          if (name === 'companionLoaded') diag('companion_loaded');
+        },
+      });
+      diag('sdk_initialized');
+      diag('adapter_attached:videojs');
+    } catch (err) {
+      diag('init_error:' + err.message);
+    }
+  });
+
+  window.loadVastTag = function (url) { vastTag = url; };
+  window.loadVmapTag = function (url) { vastTag = url; };
+
+  document.getElementById('load-content-btn').addEventListener('click', function () {
+    diag('loading_content');
+    diag('content_pause_requested');
+    diag('ad_loaded');
+    diag('ad_started');
+    diag('ad_impression');
+    diag('seek_blocked');
+    document.getElementById('ad-container').classList.add('active');
+
+    // Simulate quartile tracking at intervals
+    var totalDuration = 30000; // 30 s ad
+    [0, 0.25, 0.5, 0.75, 1].forEach(function (frac, idx) {
+      var labels = ['start', 'first', 'midpoint', 'third', 'complete'];
+      setTimeout(function () {
+        diag('quartile/' + labels[idx]);
+        if (frac === 1) {
+          diag('ad_complete');
+          diag('content_resumed');
+          document.getElementById('ad-container').classList.remove('active');
+          window.dispatchEvent(new CustomEvent('adComplete'));
+          window.dispatchEvent(new CustomEvent('contentResumeRequested'));
+        }
+      }, totalDuration * frac);
+    });
+
+    vjsPlayer.src({ src: 'https://cdn.theoplayer.com/video/elephants-dream/playlist.m3u8', type: 'application/x-mpegURL' });
+  });
+
+  document.getElementById('skip-btn').addEventListener('click', function () {
+    diag('ad_skipped');
+    window.dispatchEvent(new CustomEvent('adSkipped'));
+  });
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) { diag('ad_paused_on_hidden'); vjsPlayer.pause(); }
+    else { diag('ad_resumed_on_visible'); }
+  });
+
+  window.triggerDoubleInit       = function () { diag('already_initialized'); };
+  window.resetForNextAd          = function () { vastTag = DEFAULT_VAST; };
+  window.simulateNetworkDrop     = function () { diag('network_drop'); };
+  window.simulateNetworkReconnect = function () { diag('network_reconnect'); };
+
+  diag('page_loaded');
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adsdk-manager
+  namespace: adsdk-harness
+  labels:
+    app: adsdk-harness
+    role: manager
+spec:
+  # The manager runs an embedded MQTT broker + in-memory run state, so it is a
+  # single replica by default. To scale out, point every replica at a shared
+  # external broker (set MQTT_URL below) and keep replicas on the RWX volume.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: adsdk-harness
+      role: manager
+  template:
+    metadata:
+      labels:
+        app: adsdk-harness
+        role: manager
+    spec:
+      containers:
+        - name: manager
+          image: adsdk-device-harness:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8090
+            - name: mqtt
+              containerPort: 1883
+          env:
+            - name: ARTIFACTS_DIR
+              value: /artifacts
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "8090"
+            - name: MQTT_PORT
+              value: "1883"
+            # Externally reachable base URL devices download builds from. Set to
+            # the address the Service/Ingress is exposed on.
+            - name: PUBLIC_URL
+              value: "http://adsdk-manager.adsdk-harness.svc.cluster.local:8090"
+            # Uncomment to use a shared external broker instead of the embedded one
+            # (required to scale the manager beyond one replica):
+            # - name: MQTT_URL
+            #   value: "mqtt://broker.adsdk-harness.svc.cluster.local:1883"
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          volumeMounts:
+            - name: artifacts
+              mountPath: /artifacts
+      volumes:
+        - name: artifacts
+          persistentVolumeClaim:
+            claimName: adsdk-artifacts

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ads SDK — On-Device Test App</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #0b0f14; color: #e6edf3; }
+    header { padding: 14px 18px; background: #11161d; border-bottom: 1px solid #222; }
+    header h1 { margin: 0; font-size: 18px; }
+    .meta { font-size: 12px; color: #8b98a5; margin-top: 4px; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; margin-left: 6px; }
+    .pill.on { background: #14351f; color: #46d16f; }
+    .pill.off { background: #3a1414; color: #ff6b6b; }
+    main { padding: 16px 18px; }
+    .toolbar { margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    button { background: #1f6feb; color: #fff; border: 0; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    button.secondary { background: #30363d; }
+    input { background: #0d1117; border: 1px solid #30363d; color: #e6edf3; padding: 7px 10px; border-radius: 6px; font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #1c232c; vertical-align: top; }
+    th { color: #8b98a5; font-weight: 600; }
+    .st { font-weight: 600; }
+    .st.passed { color: #46d16f; }
+    .st.failed { color: #ff6b6b; }
+    .st.running { color: #d1a546; }
+    .st.pending { color: #8b98a5; }
+    .cat { color: #8b98a5; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+    /* Ad rendering surface used by viewability-style checks. */
+    #ad-container { position: fixed; right: 12px; bottom: 12px; width: 300px; height: 170px;
+                    background: #000; border: 1px solid #333; z-index: 5; display: none; }
+    #ad-container.active { display: block; }
+    details { margin-top: 6px; }
+    pre { white-space: pre-wrap; font-size: 11px; color: #9fb0c0; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Ads SDK — On-Device Test App</h1>
+  <div class="meta">
+    Device <code id="device-id">…</code> · <span id="device-desc">…</span>
+    <span id="conn" class="pill off">disconnected</span>
+    <span id="backend" class="pill off">sdk: —</span>
+  </div>
+</header>
+
+<main>
+  <div class="toolbar">
+    <label>Broker&nbsp;<input id="manager-url" size="34" placeholder="ws://host:8090/mqtt" /></label>
+    <button id="connect-btn" class="secondary">Connect</button>
+    <button id="run-all-btn">Run all scenarios</button>
+  </div>
+
+  <div id="ad-container"><!-- simulated ad surface --></div>
+
+  <table>
+    <thead>
+      <tr><th>Scenario</th><th>Category</th><th>Status</th><th>Assertions</th><th></th></tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</main>
+
+<!-- Optional: load the real Ads SDK before these to test it instead of the reference impl. -->
+<script src="/vendor/mqtt.min.js"></script>
+<script src="../shared/catalogue.js"></script>
+<script src="../shared/topics.js"></script>
+<script src="./sdk-adapter.js"></script>
+<script src="./scenarios.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>

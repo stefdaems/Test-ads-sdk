@@ -1,0 +1,27 @@
+{
+  "name": "test-ads-sdk",
+  "version": "1.0.0",
+  "description": "Centralised installer and TypeScript/Jest test suite for the Ads SDK device lab",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "install:all": "ts-node scripts/install-apps.ts --platform all",
+    "install:ios": "ts-node scripts/install-apps.ts --platform ios",
+    "install:android": "ts-node scripts/install-apps.ts --platform android",
+    "install:tvos": "ts-node scripts/install-apps.ts --platform tvos",
+    "install:web": "ts-node scripts/install-apps.ts --platform web",
+    "test": "cd tests && npm test",
+    "test:consent": "cd tests && npm run test:consent",
+    "test:network": "cd tests && npm run test:network",
+    "test:viewability": "cd tests && npm run test:viewability",
+    "test:memory": "cd tests && npm run test:memory"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.4.0",
+    "ws": "^8.21.0"
+  }
+}
