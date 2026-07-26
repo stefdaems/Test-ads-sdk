@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node manager/server.js",
+    "build": "node scripts/build-app.js",
     "smoke": "node scripts/smoke-test.js"
   },
   "dependencies": {

@@ -1,0 +1,22 @@
+# Service exposing the manager. Devices and external systems connect here.
+# Swap type to LoadBalancer (or add an Ingress) to reach it from real devices.
+apiVersion: v1
+kind: Service
+metadata:
+  name: adsdk-manager
+  namespace: adsdk-harness
+  labels:
+    app: adsdk-harness
+    role: manager
+spec:
+  type: ClusterIP
+  selector:
+    app: adsdk-harness
+    role: manager
+  ports:
+    - name: http
+      port: 8090
+      targetPort: http
+    - name: mqtt
+      port: 1883
+      targetPort: mqtt

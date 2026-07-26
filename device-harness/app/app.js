@@ -76,6 +76,12 @@
 
   var device = detectDevice();
 
+  // Build the app is currently running. When the app is opened directly it runs
+  // the shell it was served with ("builtin"); a manager `install` command swaps
+  // in a specific versioned build downloaded from the shared store.
+  var installedBuild = 'builtin';
+  var installStatus = 'installed';
+
   // ---- DOM ------------------------------------------------------------------
   var $ = function (id) { return document.getElementById(id); };
   $('device-id').textContent = device.id;
@@ -192,10 +198,39 @@
       status: status,
       device: device,
       app: APP,
+      installedBuild: installedBuild,
+      installStatus: installStatus,
       scenarios: Catalogue.SCENARIOS.map(function (s) {
         return { id: s.id, title: s.title, category: s.category };
       }),
     };
+  }
+
+  // ---- App install (download a build from the shared store) -----------------
+  function reportStatus() {
+    publish(Topics.status(device.id), statusPayload('online'), { retain: true, qos: 1 });
+  }
+
+  function install(build) {
+    if (!build || !build.manifestUrl) return;
+    installStatus = 'installing';
+    reportStatus();
+    fetch(build.manifestUrl)
+      .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+      .then(function (manifest) {
+        if (build.hash && manifest.hash && manifest.hash !== build.hash) {
+          throw new Error('hash mismatch');
+        }
+        installedBuild = build.buildId;
+        installStatus = 'installed';
+        publish(Topics.install(device.id), { deviceId: device.id, buildId: build.buildId, status: 'installed' });
+        reportStatus();
+      })
+      .catch(function (e) {
+        installStatus = 'failed';
+        publish(Topics.install(device.id), { deviceId: device.id, buildId: build.buildId, status: 'failed', error: String(e && e.message || e) });
+        reportStatus();
+      });
   }
 
   function connect(url) {
@@ -228,6 +263,7 @@
       try { msg = JSON.parse(buf.toString()); } catch (e) { return; }
       if (msg.type === 'run') runScenario(msg.scenarioId, msg.runId);
       else if (msg.type === 'run_all') runAll(msg.runId);
+      else if (msg.type === 'install') install(msg.build);
     });
   }
 

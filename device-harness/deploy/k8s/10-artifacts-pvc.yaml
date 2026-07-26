@@ -1,0 +1,16 @@
+# Shared build/artifact store. ReadWriteMany so the one-off build Job and the
+# manager Deployment (potentially several replicas) all read/write the SAME
+# location. Use a storage class that supports RWX (e.g. NFS, CephFS, EFS,
+# Azure Files, Filestore). For a single-node cluster RWO also works.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: adsdk-artifacts
+  namespace: adsdk-harness
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  # storageClassName: nfs   # set to your RWX-capable storage class

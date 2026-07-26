@@ -62,11 +62,15 @@ function post(path, body) {
 function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 // A simulated device node: an MQTT client that registers, then runs scenarios
-// on command, streaming live debug events + results back over the broker.
+// on command, streaming live debug events + results back over the broker. It
+// starts *without* the app installed and only becomes runnable after the manager
+// installs a build from the shared store onto it.
 function startSimulatedDevice(deviceId) {
   const device = { id: deviceId, platform: 'tizen', make: 'samsung', model: 'QN90 (sim)', userAgent: 'sim', screen: '1920x1080' };
   const app = { id: 'adsdk-harness', name: 'Ads SDK Reference Harness', version: '1.0.0', sdk: 'reference', scenarioCount: Catalogue.SCENARIOS.length };
   const statusTopic = Topics.status(deviceId);
+  let installedBuild = null;
+  let installStatus = 'not_installed';
   const client = mqtt.connect(`mqtt://127.0.0.1:${MQTT_PORT}`, {
     clientId: 'sim-' + deviceId,
     will: { topic: statusTopic, payload: JSON.stringify({ status: 'offline' }), retain: true, qos: 1 },
@@ -77,11 +81,42 @@ function startSimulatedDevice(deviceId) {
       status,
       device,
       app,
+      installedBuild,
+      installStatus,
       scenarios: Catalogue.SCENARIOS.map((s) => ({ id: s.id, title: s.title, category: s.category })),
     };
   }
 
   function pub(topic, obj, opts) { client.publish(topic, JSON.stringify(obj), opts || {}); }
+  function reportStatus() { pub(statusTopic, statusPayload('online'), { retain: true, qos: 1 }); }
+
+  // Download the build from the shared store (over the manager's /artifacts) and
+  // verify its content hash, exactly like the on-device browser app does.
+  function install(build) {
+    installStatus = 'installing';
+    reportStatus();
+    http.get(build.manifestUrl, (res) => {
+      let raw = '';
+      res.on('data', (c) => (raw += c));
+      res.on('end', () => {
+        try {
+          const manifest = JSON.parse(raw);
+          if (build.hash && manifest.hash !== build.hash) throw new Error('hash mismatch');
+          installedBuild = build.buildId;
+          installStatus = 'installed';
+          pub(Topics.install(deviceId), { deviceId, buildId: build.buildId, status: 'installed' });
+        } catch (e) {
+          installStatus = 'failed';
+          pub(Topics.install(deviceId), { deviceId, buildId: build.buildId, status: 'failed', error: String(e.message) });
+        }
+        reportStatus();
+      });
+    }).on('error', (e) => {
+      installStatus = 'failed';
+      pub(Topics.install(deviceId), { deviceId, buildId: build.buildId, status: 'failed', error: String(e.message) });
+      reportStatus();
+    });
+  }
 
   async function runOne(runId, scenarioId) {
     pub(Topics.event(deviceId), { runId, scenarioId, kind: 'scenario_start' });
@@ -94,14 +129,16 @@ function startSimulatedDevice(deviceId) {
   }
 
   client.on('connect', () => {
-    pub(statusTopic, statusPayload('online'), { retain: true, qos: 1 });
+    reportStatus();
     pub(Topics.register, statusPayload('online'), { qos: 1 });
     client.subscribe(Topics.cmd(deviceId), { qos: 1 });
   });
 
   client.on('message', async (topic, buf) => {
     const msg = JSON.parse(buf.toString());
-    if (msg.type === 'run') {
+    if (msg.type === 'install') {
+      install(msg.build);
+    } else if (msg.type === 'run') {
       await runOne(msg.runId, msg.scenarioId);
     } else if (msg.type === 'run_all') {
       const results = [];
@@ -138,7 +175,34 @@ async function main() {
   if (!seenApp) failures.push('app not listed in /api/apps');
   else console.log(`✓ app discovered: ${seenApp.name} v${seenApp.version} (${seenApp.deviceCount} device(s))`);
 
-  // 2) Dispatch a single scenario and await its result.
+  // 2) Build the app into the SHARED store and confirm it is catalogued there.
+  const built = await post('/api/builds', {});
+  const build = built.body.build;
+  if (built.status !== 201 || !build || !build.buildId) failures.push('build did not publish to shared store');
+  else console.log(`✓ app built into shared store: ${build.buildId}`);
+  const buildsResp = await get('/api/builds');
+  if (!(buildsResp.body.builds || []).some((b) => build && b.buildId === build.buildId)) failures.push('build not listed in /api/builds');
+  else console.log(`✓ build available in shared location: ${buildsResp.body.sharedLocation}`);
+
+  // 2b) A run must be refused until the app is installed on the target device.
+  const preRun = await post(`/api/devices/${deviceId}/run`, { scenarioId: 'preroll' });
+  if (preRun.status !== 409 || preRun.body.error !== 'app_not_installed') failures.push('run before install was not rejected');
+  else console.log('✓ run correctly refused before install (app_not_installed)');
+
+  // 2c) Target the device: install the build onto it from the shared store.
+  const install = await post(`/api/devices/${deviceId}/install`, { buildId: build && build.buildId });
+  if (install.status !== 202 || !install.body.installId) failures.push('install not accepted');
+  let installed = false;
+  for (let i = 0; i < 100; i++) {
+    const { body } = await get('/api/devices');
+    const d = (body.devices || []).find((x) => x.id === deviceId);
+    if (d && d.installedBuild === (build && build.buildId)) { installed = true; break; }
+    await delay(50);
+  }
+  if (!installed) failures.push('device did not report the installed build');
+  else console.log('✓ build installed onto targeted device from shared store');
+
+  // 3) Dispatch a single scenario and await its result.
   const single = await post(`/api/devices/${deviceId}/run`, { scenarioId: 'preroll' });
   if (single.status !== 202 || !single.body.runId) failures.push('single run not accepted');
   let singleRun = null;
@@ -182,6 +246,13 @@ async function main() {
       });
     }
   }
+
+  // 4) Simple results overview must reflect the device, its installed build and last run.
+  const ov = await get('/api/overview');
+  const ovDev = (ov.body.perDevice || []).find((d) => d.id === deviceId);
+  if (!ovDev || ovDev.installedBuild !== (build && build.buildId)) failures.push('overview missing installed build for device');
+  else if (!ovDev.lastRun || ovDev.lastRun.total < Catalogue.SCENARIOS.length) failures.push('overview last run not summarised');
+  else console.log(`✓ results overview: ${ov.body.passed} passed / ${ov.body.failed} failed across ${ov.body.runs} run(s)`);
 
   client.end(true);
   await new Promise((resolve) => Manager.server.close(resolve));

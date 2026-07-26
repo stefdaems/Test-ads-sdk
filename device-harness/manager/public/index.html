@@ -39,14 +39,29 @@
 <main>
   <section>
     <h2>Connected devices</h2>
-    <table><thead><tr><th>Device</th><th>App</th><th>Status</th><th>Run</th></tr></thead>
+    <table><thead><tr><th>Device</th><th>Installed build</th><th>Status</th><th>Install / Run</th></tr></thead>
       <tbody id="devices"><tr><td colspan="4" class="muted">No devices connected. Open <code>/app</code> on a device.</td></tr></tbody>
+    </table>
+  </section>
+  <section>
+    <h2>Builds (shared store)</h2>
+    <div style="margin-bottom:8px"><button id="build-btn">Build app → shared store</button>
+      <span class="muted" id="shared-loc"></span></div>
+    <table><thead><tr><th>Build</th><th>Version</th><th>Files</th><th>Built</th></tr></thead>
+      <tbody id="builds"><tr><td colspan="4" class="muted">No builds yet. Click “Build app”.</td></tr></tbody>
     </table>
   </section>
   <section>
     <h2>Apps under test</h2>
     <table><thead><tr><th>App</th><th>SDK</th><th>Scenarios</th><th>Devices</th></tr></thead>
       <tbody id="apps"><tr><td colspan="4" class="muted">No apps registered yet.</td></tr></tbody>
+    </table>
+  </section>
+  <section class="wide">
+    <h2>Results overview</h2>
+    <div class="muted" id="overview-totals">No results yet.</div>
+    <table><thead><tr><th>Device</th><th>Installed build</th><th>Last run</th><th>Result</th></tr></thead>
+      <tbody id="overview"><tr><td colspan="4" class="muted">No results yet.</td></tr></tbody>
     </table>
   </section>
   <section>
@@ -67,6 +82,7 @@
 (function () {
   'use strict';
   var scenarios = [];
+  var builds = [];
   var runsById = {};
   var followRunId = null;
 
@@ -90,15 +106,31 @@
     tb.innerHTML = '';
     list.forEach(function (d) {
       var opts = scenarios.map(function (s) { return '<option value="' + esc(s.id) + '">' + esc(s.title) + '</option>'; }).join('');
-      var appName = d.app ? d.app.name : '—';
+      var buildOpts = builds.map(function (b) { return '<option value="' + esc(b.buildId) + '">' + esc(b.buildId) + '</option>'; }).join('');
+      var installed = d.installedBuild ? esc(d.installedBuild) : '<span class="muted">not installed</span>';
+      var installState = d.installStatus && d.installStatus !== 'installed' && d.installStatus !== 'not_installed'
+        ? ' <span class="muted">(' + esc(d.installStatus) + ')</span>' : '';
+      var canRun = !!d.installedBuild;
       var tr = document.createElement('tr');
       tr.innerHTML =
         '<td><code>' + esc(d.id.slice(0, 8)) + '</code><div class="muted">' + esc(d.platform) + ' · ' + esc(d.model) + '</div></td>' +
-        '<td>' + esc(appName) + '<div class="muted">' + esc(d.app ? d.app.sdk : '') + '</div></td>' +
+        '<td>' + installed + installState + '</td>' +
         '<td class="st ' + esc(d.status) + '">' + esc(d.status) + '</td>' +
-        '<td><select data-sel>' + opts + '</select> ' +
-          '<button data-run>Run</button> <button class="secondary" data-all>All</button></td>';
+        '<td>' +
+          '<select data-build>' + (buildOpts || '<option value="">— no builds —</option>') + '</select> ' +
+          '<button class="secondary" data-install>Install</button>' +
+          '<div style="margin-top:6px">' +
+            '<select data-sel>' + opts + '</select> ' +
+            '<button data-run' + (canRun ? '' : ' disabled') + '>Run</button> ' +
+            '<button class="secondary" data-all' + (canRun ? '' : ' disabled') + '>All</button>' +
+          '</div>' +
+        '</td>';
       tb.appendChild(tr);
+      tr.querySelector('[data-install]').addEventListener('click', function () {
+        var bid = tr.querySelector('[data-build]').value;
+        if (!bid) return;
+        api('/api/devices/' + encodeURIComponent(d.id) + '/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ buildId: bid }) });
+      });
       tr.querySelector('[data-run]').addEventListener('click', function () {
         var sid = tr.querySelector('[data-sel]').value;
         api('/api/devices/' + encodeURIComponent(d.id) + '/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scenarioId: sid }) });
@@ -106,6 +138,44 @@
       tr.querySelector('[data-all]').addEventListener('click', function () {
         api('/api/devices/' + encodeURIComponent(d.id) + '/run-all', { method: 'POST' });
       });
+    });
+  }
+
+  function renderBuilds(list, sharedLocation) {
+    builds = list || builds;
+    if (sharedLocation) document.getElementById('shared-loc').textContent = 'shared: ' + sharedLocation;
+    var tb = document.getElementById('builds');
+    if (!builds.length) { tb.innerHTML = '<tr><td colspan="4" class="muted">No builds yet. Click “Build app”.</td></tr>'; return; }
+    tb.innerHTML = '';
+    builds.forEach(function (b) {
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><code>' + esc(b.buildId) + '</code></td>' +
+        '<td>' + esc(b.version) + '</td>' +
+        '<td>' + esc(b.fileCount) + '</td>' +
+        '<td class="muted">' + esc((b.builtAt || '').slice(0, 19).replace('T', ' ')) + '</td>';
+      tb.appendChild(tr);
+    });
+  }
+
+  function renderOverview(ov) {
+    document.getElementById('overview-totals').textContent =
+      ov.devices + ' device(s) · ' + ov.installed + ' installed · ' + ov.runs + ' run(s) · ' +
+      ov.passed + ' passed / ' + ov.failed + ' failed';
+    var tb = document.getElementById('overview');
+    if (!ov.perDevice || !ov.perDevice.length) { tb.innerHTML = '<tr><td colspan="4" class="muted">No results yet.</td></tr>'; return; }
+    tb.innerHTML = '';
+    ov.perDevice.forEach(function (d) {
+      var lr = d.lastRun;
+      var res = lr ? (lr.passed + '/' + lr.total + ' passed') : '—';
+      var cls = lr ? (lr.failed ? 'failed' : 'passed') : 'idle';
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><code>' + esc((d.id || '').slice(0, 8)) + '</code><div class="muted">' + esc(d.platform) + ' · ' + esc(d.model) + '</div></td>' +
+        '<td>' + (d.installedBuild ? esc(d.installedBuild) : '<span class="muted">not installed</span>') + '</td>' +
+        '<td>' + (lr ? (esc(lr.scenarioId || 'ALL') + ' <span class="muted">' + esc(lr.status) + '</span>') : '<span class="muted">—</span>') + '</td>' +
+        '<td class="st ' + cls + '">' + esc(res) + '</td>';
+      tb.appendChild(tr);
     });
   }
 
@@ -126,6 +196,8 @@
 
   function refreshDevices() { api('/api/devices').then(function (d) { renderDevices(d.devices || []); }); }
   function refreshApps() { api('/api/apps').then(function (d) { renderApps(d.apps || []); }); }
+  function refreshBuilds() { return api('/api/builds').then(function (d) { renderBuilds(d.builds || [], d.sharedLocation); }); }
+  function refreshOverview() { api('/api/overview').then(renderOverview); }
 
   function renderRuns() {
     var tb = document.getElementById('runs');
@@ -182,18 +254,30 @@
     ws.onmessage = function (ev) {
       var msg = JSON.parse(ev.data);
       if (msg.type === 'snapshot') { renderDevices(msg.devices || []); renderApps(msg.apps || []); }
-      else if (msg.type === 'device_connected' || msg.type === 'device_disconnected' || msg.type === 'device_updated') { refreshDevices(); refreshApps(); }
+      else if (msg.type === 'device_connected' || msg.type === 'device_disconnected' || msg.type === 'device_updated' || msg.type === 'install') { refreshDevices(); refreshApps(); refreshOverview(); }
+      else if (msg.type === 'build') { refreshBuilds(); }
       else if (msg.type === 'run_created') { upsertRun(msg.run); refreshDevices(); if (!followRunId || msg.run.status === 'dispatched') follow(msg.run.runId); }
       else if (msg.type === 'debug') { if (msg.runId === followRunId) appendDebug(msg.event); }
       else if (msg.type === 'result' || msg.type === 'run_all_complete') {
         api('/api/runs/' + encodeURIComponent(msg.runId)).then(function (run) { if (run && run.runId) upsertRun(run); });
-        refreshDevices();
+        refreshDevices(); refreshOverview();
       }
     };
     ws.onclose = function () { setTimeout(connectWs, 2000); };
   }
 
-  loadScenarios().then(function () { refreshDevices(); refreshApps(); connectWs(); });
+  var buildBtn = document.getElementById('build-btn');
+  buildBtn.addEventListener('click', function () {
+    buildBtn.disabled = true;
+    buildBtn.textContent = 'Building…';
+    api('/api/builds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      .then(function () { return refreshBuilds(); })
+      .then(function () { refreshDevices(); })
+      .catch(function () {})
+      .then(function () { buildBtn.disabled = false; buildBtn.textContent = 'Build app → shared store'; });
+  });
+
+  loadScenarios().then(function () { refreshBuilds().then(refreshDevices); refreshApps(); refreshOverview(); connectWs(); });
 })();
 </script>
 </body>
