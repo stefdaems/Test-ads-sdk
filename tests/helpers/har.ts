@@ -59,11 +59,25 @@ export function readCapturedUrls(): string[] {
   return readHar().log.entries.map((e) => e.request.url);
 }
 
-/** Returns all HAR entries whose URL contains `sdkPattern`. */
-export function readSdkEntries(sdkPattern = 'adsdk'): HarEntry[] {
+/**
+ * URL substrings that identify Ads SDK network traffic.
+ * Matches local SDK patterns as well as the OptiView staging / production API.
+ */
+const SDK_URL_PATTERNS: readonly string[] = [
+  'adsdk',
+  'ad-sdk',
+  'optiview-ads',
+  'optiview-ads-api',
+  // Allow the full staging hostname to be matched even without the short form
+  'staging.dolbyio.com',
+];
+
+/** Returns all HAR entries whose URL is recognised as Ads SDK traffic. */
+export function readSdkEntries(extraPattern?: string): HarEntry[] {
   if (!harExists()) return [];
+  const patterns = extraPattern ? [...SDK_URL_PATTERNS, extraPattern] : SDK_URL_PATTERNS;
   return readHar().log.entries.filter(
-    (e) => e.request.url.includes(sdkPattern) || e.request.url.includes('ad-sdk'),
+    (e) => patterns.some((p) => e.request.url.includes(p)),
   );
 }
 
@@ -92,6 +106,11 @@ export function entriesMissingHeader(entries: HarEntry[], headerName: string): H
 /** Assert all SDK URLs use HTTPS. Returns any insecure URLs found. */
 export function findInsecureUrls(urls: string[]): string[] {
   return urls
-    .filter((u) => u.includes('adsdk') || u.includes('ad-sdk'))
+    .filter((u) =>
+      u.includes('adsdk') ||
+      u.includes('ad-sdk') ||
+      u.includes('optiview-ads') ||
+      u.includes('staging.dolbyio.com')
+    )
     .filter((u) => u.startsWith('http://'));
 }
