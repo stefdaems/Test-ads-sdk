@@ -164,6 +164,7 @@ function uploadToBrowserStack(artifactPath: string): string {
     throw new Error(`BrowserStack upload failed: ${result}`);
   }
   console.log(`✅ BrowserStack app URL: ${parsed.app_url}`);
+  console.log(`   Set BROWSERSTACK_APP_URL=${parsed.app_url} when running tests`);
   return parsed.app_url;
 }
 

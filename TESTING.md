@@ -148,6 +148,63 @@ npm run test:consent
 npm run test:memory
 ```
 
+### Running tests on BrowserStack App Automate
+
+[BrowserStack App Automate](https://www.browserstack.com/app-automate) lets you run the same Appium test suite against a large fleet of real iOS and Android devices in the cloud. tvOS is **not** supported by BrowserStack App Automate.
+
+#### Step 1 — Upload the app
+
+```bash
+# Upload an Android APK
+ts-node scripts/install-apps.ts --platform android --remote browserstack
+
+# Upload an iOS IPA
+ts-node scripts/install-apps.ts --platform ios --remote browserstack
+```
+
+The script prints a `bs://…` URL on success:
+
+```
+✅ BrowserStack app URL: bs://abc123...
+   Set BROWSERSTACK_APP_URL=bs://abc123... when running tests
+```
+
+#### Step 2 — Run the tests
+
+```bash
+cd tests && npm install
+
+# Android example
+BROWSERSTACK_USERNAME=<username> \
+BROWSERSTACK_ACCESS_KEY=<access-key> \
+BROWSERSTACK_APP_URL=bs://<hash> \
+BROWSERSTACK_DEVICE="Samsung Galaxy S22" \
+BROWSERSTACK_OS_VERSION="12.0" \
+PLATFORM=android \
+npm test
+
+# iOS example
+BROWSERSTACK_USERNAME=<username> \
+BROWSERSTACK_ACCESS_KEY=<access-key> \
+BROWSERSTACK_APP_URL=bs://<hash> \
+BROWSERSTACK_DEVICE="iPhone 14" \
+BROWSERSTACK_OS_VERSION="16" \
+PLATFORM=ios \
+npm test
+```
+
+#### BrowserStack environment variables
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `BROWSERSTACK_USERNAME` | ✅ | BrowserStack account username |
+| `BROWSERSTACK_ACCESS_KEY` | ✅ | BrowserStack access key |
+| `BROWSERSTACK_APP_URL` | ✅ | `bs://…` URL returned by the upload step |
+| `BROWSERSTACK_DEVICE` | recommended | Target device name (e.g. `"Samsung Galaxy S22"`) |
+| `BROWSERSTACK_OS_VERSION` | recommended | Target OS version (e.g. `"12.0"`) |
+| `BROWSERSTACK_BUILD_NAME` | optional | Label shown in the BrowserStack dashboard |
+| `BROWSERSTACK_SESSION_NAME` | optional | Per-session label in the BrowserStack dashboard |
+
 ---
 
 ## 5. Pre-Release Checklist

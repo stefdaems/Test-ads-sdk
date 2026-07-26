@@ -33,7 +33,19 @@ const TVLABS_DEVICE_TYPE = process.env.TVLABS_DEVICE_TYPE ?? ''; // 'tv' | 'stb'
 
 const IS_TVLABS = TVLABS_API_KEY !== '';
 
-// Fall back to direct Appium when not using TV Labs
+// BrowserStack App Automate — when BROWSERSTACK_USERNAME + BROWSERSTACK_ACCESS_KEY are set
+// the driver routes through hub-cloud.browserstack.com. Mutually exclusive with IS_TVLABS.
+const BROWSERSTACK_USERNAME    = process.env.BROWSERSTACK_USERNAME    ?? '';
+const BROWSERSTACK_ACCESS_KEY  = process.env.BROWSERSTACK_ACCESS_KEY  ?? '';
+const BROWSERSTACK_APP_URL     = process.env.BROWSERSTACK_APP_URL     ?? ''; // bs://... from upload
+const BROWSERSTACK_DEVICE      = process.env.BROWSERSTACK_DEVICE      ?? ''; // e.g. 'Samsung Galaxy S22'
+const BROWSERSTACK_OS_VERSION  = process.env.BROWSERSTACK_OS_VERSION  ?? ''; // e.g. '12.0'
+const BROWSERSTACK_BUILD_NAME  = process.env.BROWSERSTACK_BUILD_NAME  ?? '';
+const BROWSERSTACK_SESSION_NAME = process.env.BROWSERSTACK_SESSION_NAME ?? '';
+
+const IS_BROWSERSTACK = !IS_TVLABS && BROWSERSTACK_USERNAME !== '' && BROWSERSTACK_ACCESS_KEY !== '';
+
+// Fall back to direct Appium when not using TV Labs or BrowserStack
 const APPIUM_HOST = IS_TVLABS ? 'appium.tvlabs.ai' : (process.env.APPIUM_HOST ?? '127.0.0.1');
 const APPIUM_PORT = IS_TVLABS ? 4723               : parseInt(process.env.APPIUM_PORT ?? '4723', 10);
 
@@ -44,13 +56,17 @@ const APPIUM_PORT = IS_TVLABS ? 4723               : parseInt(process.env.APPIUM
 function buildCapabilities(): WebdriverIO.Capabilities {
   let caps: WebdriverIO.Capabilities;
 
+  // When using BrowserStack the app is identified by its bs://... URL; fall
+  // back to the local APP_PATH for direct-Appium and TV Labs sessions.
+  const appCap = IS_BROWSERSTACK && BROWSERSTACK_APP_URL ? BROWSERSTACK_APP_URL : APP_PATH;
+
   switch (PLATFORM) {
     case 'ios':
       caps = {
         platformName: 'iOS',
         'appium:automationName': 'XCUITest',
         'appium:udid': DEVICE_UDID,
-        'appium:app': APP_PATH,
+        'appium:app': appCap,
         'appium:noReset': false,
       };
       break;
@@ -59,7 +75,7 @@ function buildCapabilities(): WebdriverIO.Capabilities {
         platformName: 'tvOS',
         'appium:automationName': 'XCUITest',
         'appium:udid': DEVICE_UDID,
-        'appium:app': APP_PATH,
+        'appium:app': appCap,
         'appium:noReset': false,
       };
       break;
@@ -69,7 +85,7 @@ function buildCapabilities(): WebdriverIO.Capabilities {
         platformName: 'Android',
         'appium:automationName': 'UiAutomator2',
         'appium:udid': DEVICE_SERIAL,
-        'appium:app': APP_PATH,
+        'appium:app': appCap,
         'appium:noReset': false,
       };
       break;
@@ -92,6 +108,16 @@ function buildCapabilities(): WebdriverIO.Capabilities {
     }
   }
 
+  if (IS_BROWSERSTACK) {
+    // BrowserStack-specific options (device selection, build/session labels)
+    const bstackOptions: Record<string, unknown> = {};
+    if (BROWSERSTACK_DEVICE)       bstackOptions.deviceName    = BROWSERSTACK_DEVICE;
+    if (BROWSERSTACK_OS_VERSION)   bstackOptions.osVersion     = BROWSERSTACK_OS_VERSION;
+    if (BROWSERSTACK_BUILD_NAME)   bstackOptions.buildName     = BROWSERSTACK_BUILD_NAME;
+    if (BROWSERSTACK_SESSION_NAME) bstackOptions.sessionName   = BROWSERSTACK_SESSION_NAME;
+    (caps as Record<string, unknown>)['bstack:options'] = bstackOptions;
+  }
+
   return caps;
 }
 
@@ -105,6 +131,10 @@ function buildCapabilities(): WebdriverIO.Capabilities {
  *
  * When TVLABS_API_KEY is set the session is routed through appium.tvlabs.ai
  * and the Authorization header is added automatically.
+ *
+ * When BROWSERSTACK_USERNAME + BROWSERSTACK_ACCESS_KEY are set the session is
+ * routed through hub-cloud.browserstack.com using WebdriverIO's built-in
+ * user/key options (mutually exclusive with TV Labs).
  */
 export async function createDriver(): Promise<Browser<'async'>> {
   const options: RemoteOptions = {
@@ -119,6 +149,14 @@ export async function createDriver(): Promise<Browser<'async'>> {
 
   if (IS_TVLABS) {
     options.headers = { Authorization: `****** };
+  }
+
+  if (IS_BROWSERSTACK) {
+    options.hostname = 'hub-cloud.browserstack.com';
+    options.port     = 443;
+    options.path     = '/wd/hub';
+    options.user     = BROWSERSTACK_USERNAME;
+    options.key      = BROWSERSTACK_ACCESS_KEY;
   }
 
   return remote(options);
