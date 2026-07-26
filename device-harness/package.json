@@ -1,0 +1,16 @@
+{
+  "name": "adsdk-device-harness",
+  "version": "1.0.0",
+  "description": "On-device Ads SDK test app + external manager for remotely instructing devices to run test scenarios",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node manager/server.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "dependencies": {
+    "ws": "^8.21.0"
+  }
+}

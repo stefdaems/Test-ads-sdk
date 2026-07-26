@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ads SDK — Device Manager</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #0b0f14; color: #e6edf3; }
+    header { padding: 14px 18px; background: #11161d; border-bottom: 1px solid #222; }
+    header h1 { margin: 0; font-size: 18px; }
+    main { padding: 16px 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    section { background: #11161d; border: 1px solid #1c232c; border-radius: 8px; padding: 12px 14px; }
+    h2 { font-size: 14px; margin: 0 0 10px; color: #8b98a5; text-transform: uppercase; letter-spacing: .05em; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #1c232c; vertical-align: top; }
+    button { background: #1f6feb; color: #fff; border: 0; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+    button.secondary { background: #30363d; }
+    select { background: #0d1117; border: 1px solid #30363d; color: #e6edf3; padding: 5px 8px; border-radius: 6px; }
+    .st.passed { color: #46d16f; } .st.failed { color: #ff6b6b; }
+    .st.running, .st.dispatched { color: #d1a546; } .st.completed { color: #46d16f; }
+    .muted { color: #8b98a5; font-size: 12px; }
+    code { color: #9fb0c0; }
+    pre { white-space: pre-wrap; font-size: 11px; color: #9fb0c0; max-height: 260px; overflow: auto; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Ads SDK — External Device Manager</h1>
+  <div class="muted">Instruct connected devices to run on-device ad test scenarios and collect results.</div>
+</header>
+<main>
+  <section>
+    <h2>Connected devices</h2>
+    <table><thead><tr><th>Device</th><th>Platform</th><th>Status</th><th>Run</th></tr></thead>
+      <tbody id="devices"><tr><td colspan="4" class="muted">No devices connected. Open <code>/app</code> on a device.</td></tr></tbody>
+    </table>
+  </section>
+  <section>
+    <h2>Runs</h2>
+    <table><thead><tr><th>Run</th><th>Device</th><th>Scenario</th><th>Status</th></tr></thead>
+      <tbody id="runs"><tr><td colspan="4" class="muted">No runs yet.</td></tr></tbody>
+    </table>
+    <div id="detail"></div>
+  </section>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  var scenarios = [];
+  var runsById = {};
+
+  function api(path, opts) {
+    return fetch(path, opts).then(function (r) { return r.json(); });
+  }
+
+  function loadScenarios() {
+    return api('/api/scenarios').then(function (d) { scenarios = d.scenarios || []; });
+  }
+
+  function renderDevices(list) {
+    var tb = document.getElementById('devices');
+    if (!list.length) { tb.innerHTML = '<tr><td colspan="4" class="muted">No devices connected. Open <code>/app</code> on a device.</td></tr>'; return; }
+    tb.innerHTML = '';
+    list.forEach(function (d) {
+      var opts = scenarios.map(function (s) { return '<option value="' + s.id + '">' + s.title + '</option>'; }).join('');
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><code>' + d.id.slice(0, 8) + '</code><div class="muted">' + d.model + '</div></td>' +
+        '<td>' + d.platform + '<div class="muted">' + d.make + '</div></td>' +
+        '<td class="st ' + d.status + '">' + d.status + '</td>' +
+        '<td><select data-sel>' + opts + '</select> ' +
+          '<button data-run>Run</button> <button class="secondary" data-all>All</button></td>';
+      tb.appendChild(tr);
+      tr.querySelector('[data-run]').addEventListener('click', function () {
+        var sid = tr.querySelector('[data-sel]').value;
+        api('/api/devices/' + d.id + '/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scenarioId: sid }) });
+      });
+      tr.querySelector('[data-all]').addEventListener('click', function () {
+        api('/api/devices/' + d.id + '/run-all', { method: 'POST' });
+      });
+    });
+  }
+
+  function refreshDevices() { api('/api/devices').then(function (d) { renderDevices(d.devices || []); }); }
+
+  function renderRuns() {
+    var tb = document.getElementById('runs');
+    var list = Object.keys(runsById).map(function (k) { return runsById[k]; });
+    if (!list.length) { tb.innerHTML = '<tr><td colspan="4" class="muted">No runs yet.</td></tr>'; return; }
+    tb.innerHTML = '';
+    list.slice(-40).reverse().forEach(function (r) {
+      var tr = document.createElement('tr');
+      var passed = r.results.reduce(function (n, x) { return n + (x.status === 'passed' ? 1 : 0); }, 0);
+      tr.innerHTML =
+        '<td><code>' + r.runId.slice(0, 8) + '</code></td>' +
+        '<td><code>' + r.deviceId.slice(0, 8) + '</code></td>' +
+        '<td>' + (r.scenarioId || 'ALL') + '</td>' +
+        '<td class="st ' + r.status + '">' + r.status + ' (' + passed + '/' + r.results.length + ')</td>';
+      tr.style.cursor = 'pointer';
+      tr.addEventListener('click', function () { showDetail(r); });
+      tb.appendChild(tr);
+    });
+  }
+
+  function showDetail(r) {
+    document.getElementById('detail').innerHTML =
+      '<h2>Run ' + r.runId.slice(0, 8) + '</h2><pre>' + JSON.stringify(r, null, 2) + '</pre>';
+  }
+
+  function upsertRun(run) { runsById[run.runId] = run; renderRuns(); }
+
+  function connectWs() {
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var ws = new WebSocket(proto + '//' + location.host + '/ws?role=operator');
+    ws.onmessage = function (ev) {
+      var msg = JSON.parse(ev.data);
+      if (msg.type === 'snapshot') { renderDevices(msg.devices || []); }
+      else if (msg.type === 'device_connected' || msg.type === 'device_disconnected') { refreshDevices(); }
+      else if (msg.type === 'run_created') { upsertRun(msg.run); refreshDevices(); }
+      else if (msg.type === 'result' || msg.type === 'run_all_complete') {
+        api('/api/runs/' + msg.runId).then(function (run) { if (run && run.runId) upsertRun(run); });
+        refreshDevices();
+      }
+    };
+    ws.onclose = function () { setTimeout(connectWs, 2000); };
+  }
+
+  loadScenarios().then(function () { refreshDevices(); connectWs(); });
+})();
+</script>
+</body>
+</html>
